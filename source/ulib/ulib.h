@@ -1,0 +1,268 @@
+// User library
+
+#ifndef _KLIB_H
+#define _KLIB_H
+
+#define min(a,b) (a<b?a:b)
+#define max(a,b) (a>b?a:b)
+
+// System call
+// Avoid using it since there are already implemented
+// more general purpose functions in this library
+uint syscall(uint service, void* param);
+
+// Memory
+void* memset(void* dst, int c, size_t n);
+size_t memcpy(void* dst, const void* src, size_t n);
+
+// String management
+size_t strcmp(const char* str1, const char* str2);
+size_t strlen(const char* str);
+size_t strncpy(char* dst, const char* src, size_t n);
+size_t strncat(char* dst, const char* src, size_t n);
+size_t strchr(const char* str, char c);
+char* strtok(char* src, char** next, char delim);
+
+// strtok:
+// Get first token in string
+//
+// src is the input untokenized string. It will be modified.
+// delim is the delimiter character to separate tokens.
+// The function returns a pointer to the start of first token in src.
+// All consecutive delimiters found immediately after the first token
+// will be replaced with 0, so return value is a 0 finished string with
+// the first token.
+// After execution, (*next) will point to the remaining string after the
+// first token and its final 0 (or 0s).
+//
+// To tokenize a full string, this function should be called several times,
+// until *next = 0
+//
+
+
+// Cursor management
+void get_cursor_pos(uint* col, uint* row);
+void set_cursor_pos(uint col, uint row);
+void set_show_cursor(uint show);
+
+
+// Special key codes
+//
+// getkey() function returns a key code (uint)
+// Alphanumeric and usual symbol key codes are their ASCII code.
+// Special key values are specified here.
+// Example:
+//
+// uint k = getkey();
+// if(k == KEY_DEL) ...
+// if(k == 'a') ...
+
+#define KEY_BACKSPACE 0x0008
+#define KEY_RETURN    0x000D
+#define KEY_ESC       0x001B
+#define KEY_DEL       0x5300
+#define KEY_END       0x4F00
+#define KEY_HOME      0x4700
+#define KEY_INS       0x5200
+#define KEY_PG_DN     0x5100
+#define KEY_PG_UP     0x4900
+#define KEY_PRT_SC    0x7200
+#define KEY_TAB       0x0009
+
+#define KEY_UP        0x4800
+#define KEY_LEFT      0x4B00
+#define KEY_RIGHT     0x4D00
+#define KEY_DOWN      0x5000
+
+#define KEY_F1        0x3B00
+#define KEY_F2        0x3C00
+#define KEY_F3        0x3D00
+#define KEY_F4        0x3E00
+#define KEY_F5        0x3F00
+#define KEY_F6        0x4000
+#define KEY_F7        0x4100
+#define KEY_F8        0x4200
+#define KEY_F9        0x4300
+#define KEY_F10       0x4400
+#define KEY_F11       0x8500
+#define KEY_F12       0x8600
+
+uint getkey();
+int getstr(char* str, size_t n);
+// getstr: Get a string from user. Returns when RETURN key is
+// pressed. Unused str characters are set to 0.
+// Returns number of elements in str
+
+// Put char and put formatted string in screen
+// Supports:
+// %d (int), %u (uint), %x (uint),
+// %s (char*), %c (uchar)
+// Width modifiers allowed: %2d, %4x...
+void putc(char c);
+void putstr(const char* format, ...);
+
+// Formatted strings in serial port and debug output.
+// Debug output is serial port by default
+void serial_putstr(const char* format, ...);
+void debug_putstr(const char* format, ...);
+
+
+
+// Get current system date and time
+void time(time_t* t);
+
+
+// File system related
+
+// Unless another thing is specified, all paths must be provided as
+// absolute or relative to the system disk.
+// When specified as absolute, they must begin with a disk identifier.
+// Possible disk identifiers are:
+// fd0 - First floppy disk
+// fd1 - Second floppy disk
+// hd0 - First hard disk
+// hd1 - Second hard disk
+//
+// Path components are separated with slashes '/'
+// The root directory of a disk can be omitted or referred as "."
+// when it's the last path component.
+//
+// Examples of valid paths:
+// fd0
+// hd0/.
+// hd0/documents/file.txt
+//
+
+// When disks must be referenced by uint disk, valid values are:
+// fd0 : 0x00
+// fd1 : 0x01
+// hd0 : 0x80
+// hd1 : 0x81
+
+// Special error codes
+#define ERROR_NOT_FOUND 0xFFFF
+#define ERROR_EXISTS    0xFFFE
+#define ERROR_IO        0xFFFD
+#define ERROR_NO_SPACE  0xFFFC
+#define ERROR_ANY       0xFFFB
+
+// FS_ENTRY flags
+#define FST_DIR  0x01   // Directory
+#define FST_FILE 0x02   // File
+
+typedef struct {
+  char    name[15];
+  uint8_t flags;
+  uint    size; // bytes for files, items for directories
+} FS_ENTRY;
+
+#define MAX_PATH 72
+
+// FS_INFO.fs_type types
+#define FS_TYPE_UNKNOWN 0x000
+#define FS_TYPE_NSFS    0x001
+
+uint disk_to_index(uint disk);
+char* disk_to_string(uint disk);
+uint string_to_disk(char* str);
+uint32_t blocks_to_MB(uint32_t blocks);
+
+typedef struct {
+  char  name[4];
+  uint  id;        // Disk id code
+  uint  fs_type;
+  uint  fs_size;   // MB
+  uint  disk_size; // MB
+} FS_INFO;
+
+
+// Get filesystem info
+// Output: info
+// disk_index is referred to the index of a disk on the currently
+// available disks list.
+// returns number of available disks
+uint get_fsinfo(uint disk_index, FS_INFO* info);
+
+
+// Get filesystem entry
+// Output: entry
+// parent and/or disk can be UNKNOWN_VALUE if they are unknown.
+// In this case they will be deducted from path
+// Paths must be:
+// - absolute or relative to system disk if parent and/or disk are unknown
+// - relative to parent if parent index entry or disk id are provided
+// Returns ERROR_NOT_FOUND if error, entry index otherwise
+#define UNKNOWN_VALUE 0xFFFFFFFF
+uint get_entry(FS_ENTRY* entry, char* path, uint parent, uint disk);
+
+
+// Read file
+// Output: buff
+// Reads count bytes of path file starting at byte offset inside this file.
+// Returns number of readed bytes or ERROR_NOT_FOUND
+uint read_file(void* buff, char* path, uint offset, uint count);
+
+// Write file flags
+ #define FWF_CREATE   0x0001 // Create if does not exist
+ #define FWF_TRUNCATE 0x0002 // Truncate to last written position
+
+// Write file
+// Writes count bytes of path file starting at byte offset inside this file.
+// If target file is not big enough, its size is increased.
+// Depending on flags, path file can be created or truncated.
+// Returns number of written bytes or ERROR_NOT_FOUND
+uint write_file(void* buff, char* path, uint offset, uint count, uint flags);
+
+
+// Move entry
+// In the case of directories, they are recursively moved
+// Returns:
+// - ERROR_NOT_FOUND if source does not exist
+// - ERROR_EXISTS if destination exists
+// - another value otherwise
+uint move(char* srcpath, char* dstpath);
+
+
+// Copy entry
+// In the case of directories, they are recursively copied
+// Returns:
+// - ERROR_NOT_FOUND if source does not exist
+// - ERROR_EXISTS if destination exists
+// - another value otherwise
+uint copy(char* srcpath, char* dstpath);
+
+/*
+ * Delete entry
+ * In the case of directories, they are recursively deleted
+ * Returns:
+ * - ERROR_NOT_FOUND if path does not exist
+ * - index of deleted entry otherwise
+ */
+uint delete(char* path);
+
+
+// Create a directory
+// Returns:
+// - ERROR_NOT_FOUND if parent path does not exist
+// - ERROR_EXISTS if destination already exists
+// - index of created entry otherwise
+uint create_directory(char* path);
+
+
+// List directory entries
+// Output: entry
+// Gets entry with index n in path directory
+// Returns:
+// - ERROR_NOT_FOUND if path does not exist
+// - number of elements in ths directory otherwise
+uint list(FS_ENTRY* entry, char* path, uint n);
+
+
+// Create filesystem in disk
+// Deletes all files, creates NSFS filesystem
+// and adds a copy of the kernel
+// Returns 0 on success
+uint format(uint disk);
+
+
+#endif // _KLIB_H
