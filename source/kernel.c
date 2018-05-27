@@ -8,13 +8,94 @@
 #include "syscall.h"
 #include "x86.h"
 
-// Extern program call
-#define UPROG_MEMLOC 0x10000L
-#define UPROG_STRLOC 0x20080L
-#define UPROG_ARGLOC 0x20000L
+uint8_t system_disk = 0xFF;
 
-// FW declaration
-uint index_to_disk(uint index);
+// Extern program call
+#define UPROG_MEMLOC 0x20000U
+#define UPROG_MEMMAX 0x10000U
+#define UPROG_ARGLOC 0x18000U
+#define UPROG_STRLOC 0x18080U
+
+// Heap related
+static const void* HEAPADDR = (void*)0x30000; // Allocate heap memory here
+#define HEAP_NUM_BLOCK   0x00020U
+#define HEAP_MEM_SIZE    0x40000U
+#define HEAP_BLOCK_SIZE  (HEAP_MEM_SIZE / HEAP_NUM_BLOCK)
+
+typedef struct {
+  uint   used;
+  void*  ptr;
+} HEAPBLOCK;
+static HEAPBLOCK heap[HEAP_NUM_BLOCK];
+
+// Init heap: all blocks are unused
+static void heap_init()
+{
+  uint i;
+  for(i=0; i<HEAP_NUM_BLOCK; i++) {
+    heap[i].used = 0;
+    heap[i].ptr = 0;
+  }
+}
+
+// Allocate memory in heap
+static void* heap_alloc(size_t size)
+{
+  uint n_alloc = 0;
+  uint n_found = 0;
+  uint i, j;
+
+  if(size == 0) {
+    return 0;
+  }
+
+  // Get number of blocks to allocate
+  n_alloc = size / HEAP_BLOCK_SIZE +
+    ((size % HEAP_BLOCK_SIZE) ? 1 : 0);
+
+	debug_putstr("heap: looking for %u blocks\n", n_alloc);
+
+  // Find a continuous set of n_alloc free blocks
+  for(i=0; i<HEAP_NUM_BLOCK; i++) {
+    if(heap[i].used) {
+			debug_putstr("heap: block %u is in use (%d)\n", i, heap[i].used);
+      n_found = 0;
+    } else {
+      n_found++;
+      if(n_found >= n_alloc) {
+        uint bi = (i+1-n_alloc)*HEAP_BLOCK_SIZE;
+        void* addr = (void*)HEAPADDR + bi;
+        for(j=i+1-n_alloc; j<=i; j++) {
+          heap[j].ptr = addr;
+          heap[j].used = 1;
+        }
+				debug_putstr("heap: found at %x\n", addr);
+        return addr;
+      }
+    }
+  }
+
+  // Error: not found
+  debug_putstr("Mem alloc: BAD ALLOC (%u bytes)\n", size);
+  return 0;
+}
+
+// Free memory in heap
+static void heap_free(const void* ptr)
+{
+  uint i;
+  if(ptr != 0) {
+    for(i=0; i<HEAP_NUM_BLOCK; i++) {
+      if(heap[i].ptr == ptr && heap[i].used) {
+        heap[i].used = 0;
+        heap[i].ptr = 0;
+      }
+    }
+  }
+
+  return;
+}
+
 
 // Handle system calls
 // Usually:
@@ -25,8 +106,31 @@ uint kernel_service(uint service, void* param)
 {
 	switch(service) {
 
+		case SYSCALL_MEM_ALLOCATE: {
+			return (uint)heap_alloc(*(size_t*)param);
+		}
+
+		case SYSCALL_MEM_FREE: {
+			heap_free(param);
+			return 0;
+		}
+
 		case SYSCALL_IO_OUT_CHAR: {
-			io_vga_putc(*(char*)param);
+			uint uparam = *(uint*)param;
+			uint8_t attr = ((uparam & 0xFF00) >> 8);
+			char c = (uparam & 0xFF);
+			io_vga_putc(c, attr);
+			return 0;
+		}
+
+		case SYSCALL_IO_OUT_CHAR_ATTR: {
+			TSYSCALL_POSATTR* pc = param;
+			io_vga_putc_attr(pc->x, pc->y, pc->c, pc->attr);
+			return 0;
+		}
+
+		case SYSCALL_IO_CLEAR_SCREEN: {
+			io_vga_clear();
 			return 0;
 		}
 
@@ -58,93 +162,54 @@ uint kernel_service(uint service, void* param)
 		}
 
 		case SYSCALL_FS_GET_INFO: {
-			TSYSCALL_FSINFO fi;
-			FS_INFO info;
-			uint result;
-			memcpy(&fi, param, sizeof(fi));
-			result = fs_get_info(fi.disk_index, &info);
-			memcpy(fi.info, &info, sizeof(info));
-			return result;
+			TSYSCALL_FSINFO* fi = param;
+			return fs_get_info(fi->disk_index, fi->info);
 		}
 
 		case SYSCALL_FS_GET_ENTRY: {
-			TSYSCALL_FSENTRY fi;
+			TSYSCALL_FSENTRY* fi = param;
 			SFS_ENTRY entry;
 			FS_ENTRY o_entry;
 			char path[MAX_PATH];
 			uint result;
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(path, fi.path, sizeof(path));
-			result = fs_get_entry(&entry, path, fi.parent, fi.disk);
+			memcpy(path, fi->path, sizeof(path));
+			result = fs_get_entry(&entry, path, fi->parent, fi->disk);
 			memcpy(o_entry.name, entry.name, sizeof(o_entry.name));
 			o_entry.flags = entry.flags;
 			o_entry.size = entry.size;
-			memcpy(fi.entry, &o_entry, sizeof(o_entry));
+			memcpy(fi->entry, &o_entry, sizeof(o_entry));
 			return result;
 		}
 
 		case SYSCALL_FS_READ_FILE: {
-			TSYSCALL_FSRWFILE fi;
+			TSYSCALL_FSRWFILE* fi = param;
 			char path[MAX_PATH];
-			uint offset = 0;
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(path, fi.path, sizeof(path));
-			while(offset < fi.count) {
-				char tbuff[BLOCK_SIZE];
-				uint count = min(sizeof(tbuff), fi.count-offset);
-				uint read = fs_read_file(tbuff, path, fi.offset+offset, count);
-				if(read >= ERROR_ANY) {
-					offset = read;
-					break;
-				}
-				if(read == 0) {
-					break;
-				}
-				memcpy(fi.buff+offset, tbuff, read);
-				offset += read;
-			}
-			return offset;
+			memcpy(path, fi->path, sizeof(path));
+      return fs_read_file(fi->buff, path, fi->offset, fi->count);
 		}
 
 		case SYSCALL_FS_WRITE_FILE: {
-			TSYSCALL_FSRWFILE fi;
+			TSYSCALL_FSRWFILE* fi = param;
 			char path[MAX_PATH];
-			uint offset = 0;
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(path, fi.path, sizeof(path));
-			while(offset < fi.count) {
-				char tbuff[BLOCK_SIZE];
-				uint write;
-				uint count = min(sizeof(tbuff), fi.count-offset);
-				memcpy(tbuff, fi.buff+fi.offset+offset, count);
-
-				write = fs_write_file(tbuff, path, fi.offset+offset, count, fi.flags);
-				if(write >= ERROR_ANY) {
-					offset = write;
-					break;
-				}
-				offset += write;
-			}
-			return offset;
+			memcpy(path, fi->path, sizeof(path));
+			return fs_write_file(fi->buff, path, fi->offset, fi->count, fi->flags);
 		}
 
 		case SYSCALL_FS_MOVE: {
-			TSYSCALL_FSSRCDST fi;
+			TSYSCALL_FSSRCDST* fi = param;
 			char src[MAX_PATH];
 			char dst[MAX_PATH];
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(src, fi.src, sizeof(src));
-			memcpy(dst, fi.dst, sizeof(dst));
+			memcpy(src, fi->src, sizeof(src));
+			memcpy(dst, fi->dst, sizeof(dst));
 			return fs_move(src, dst);
 		}
 
 		case SYSCALL_FS_COPY: {
-			TSYSCALL_FSSRCDST fi;
+			TSYSCALL_FSSRCDST* fi = param;
 			char src[MAX_PATH];
 			char dst[MAX_PATH];
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(src, fi.src, sizeof(src));
-			memcpy(dst, fi.dst, sizeof(dst));
+			memcpy(src, fi->src, sizeof(src));
+			memcpy(dst, fi->dst, sizeof(dst));
 			return fs_copy(src, dst);
 		}
 
@@ -161,18 +226,17 @@ uint kernel_service(uint service, void* param)
 		}
 
 		case SYSCALL_FS_LIST: {
-			TSYSCALL_FSLIST fi;
+			TSYSCALL_FSLIST* fi = param;
 			SFS_ENTRY entry;
 			FS_ENTRY o_entry;
 			char path[MAX_PATH];
 			uint result;
-			memcpy(&fi, param, sizeof(fi));
-			memcpy(path, fi.path, sizeof(path));
-			result = fs_list(&entry, path, fi.n);
+			memcpy(path, fi->path, sizeof(path));
+			result = fs_list(&entry, path, fi->n);
 			memcpy(o_entry.name, entry.name, sizeof(o_entry.name));
 			o_entry.flags = entry.flags;
 			o_entry.size = entry.size;
-			memcpy(fi.entry, &o_entry, sizeof(o_entry));
+			memcpy(fi->entry, &o_entry, sizeof(o_entry));
 			return result;
 		}
 
@@ -180,10 +244,14 @@ uint kernel_service(uint service, void* param)
 			return fs_format(*(uint*)param);
 		}
 
-		case SYSCALL_TIME_GET: {
-			io_gettime(param);
+		case SYSCALL_DATETIME_GET: {
+			io_getdatetime(param);
 			return 0;
 		}
+
+    case SYSCALL_TIMER_GET: {
+      return io_gettimer();
+    }
 	};
 
 	return 0;
@@ -199,53 +267,11 @@ void kernel()
 	debug_putstr("nano32 %u.%u build %u\n",
 		OS_VERSION_HI, OS_VERSION_LO, OS_BUILD_NUM);
 
-	// Setup disk identifiers
-  disk_info[0].id = 0x00; // Floppy disk 0
-  strncpy(disk_info[0].name, "fd0", sizeof(disk_info[0].name));
+	// Init heap
+	heap_init();
 
-  disk_info[1].id = 0x01; // Floppy disk 1
-  strncpy(disk_info[1].name, "fd1", sizeof(disk_info[1].name));
-
-  disk_info[2].id = 0x80; // Hard disk 0
-  strncpy(disk_info[2].name, "hd0", sizeof(disk_info[2].name));
-
-  disk_info[3].id = 0x81; // Hard disk 1
-  strncpy(disk_info[3].name, "hd1", sizeof(disk_info[3].name));
-
-  // Initialize hardware related disks info
-  debug_putstr("Disk auxiliar buffer at: %x\n", disk_buff);
-
-	for(uint i=0; i<MAX_DISK; i++) {
-    uint n = index_to_disk(i);
-
-    // Try to get info
-		diskinfo_t dinfo;
-    uint result = io_disk_get_info(n, &dinfo);
-		disk_info[i].sectors = dinfo.sector_num;
-		disk_info[i].sides = dinfo.head_num;
-		disk_info[i].cylinders = dinfo.cylinder_num;
-
-    // Use retrieved data if success
-    if(result == 0) {
-      disk_info[i].size = (disk_info[i].sectors *
-        disk_info[i].sides * disk_info[i].cylinders) /
-        (1048576L / BLOCK_SIZE);
-
-      disk_info[i].last_access = 0;
-
-      debug_putstr("DISK (%2x : size=%u MB sect_per_track=%d, sides=%d, cylinders=%d)\n",
-        n, disk_info[i].size, disk_info[i].sectors, disk_info[i].sides,
-        disk_info[i].cylinders);
-
-    } else {
-      // Failed. Do not use this disk
-      disk_info[i].sectors = 0;
-      disk_info[i].sides = 0;
-      disk_info[i].cylinders = 0;
-      disk_info[i].size = 0;
-      disk_info[i].last_access = 0;
-    }
-  }
+	// Init disks info
+	io_disks_init_info();
 
   // Init FS info
   fs_init_info();
@@ -262,6 +288,7 @@ void kernel()
 
 		// Prompt and wait command
 		putstr("> ");
+    //dump_regs();
 		getstr(str, sizeof(str));
 
 		execute(str);
@@ -299,23 +326,20 @@ static void execute(char* str)
   else if(strcmp(argv[0], "cls") == 0) {
     // Cls command: clear the screen
     if(argc == 1) {
-      putstr("not implemented\n");
+      clear_screen();
     } else {
       putstr("usage: cls\n");
     }
 
   } else if(strcmp(argv[0], "shutdown") == 0) {
     if(argc == 1) {
-      putstr("not implemented\n");
+      putstr("Shutting down...\n\n");
+      io_vga_clear();
+      io_vga_showcursor(0);
+      putstr("Turn off computer");
+      apm_shutdown();
     } else {
       putstr("usage: shutdown\n");
-    }
-
-	} else if(strcmp(argv[0], "config") == 0) {
-    if(argc == 1) {
-      putstr("not implemented\n");
-    } else {
-      putstr("usage: config\n");
     }
 
 	} else if(strcmp(argv[0], "list") == 0) {
@@ -463,16 +487,17 @@ static void execute(char* str)
 			putstr("Disks:\n");
 			fs_init_info(); // Rescan disks
 			for(uint i=0; i<MAX_DISK; i++) {
-				uint n = index_to_disk(i);
 				if(disk_info[i].size) {
 					putstr("%s %s(%uMB)   Disk size: %uMB\n",
-						disk_to_string(n), disk_info[i].fstype == FS_TYPE_NSFS ? "NSFS" : "UNKN",
+						disk_to_string(i), disk_info[i].fstype == FS_TYPE_NSFS ? "NSFS" : "UNKN",
 						blocks_to_MB(disk_info[i].fssize), disk_info[i].size);
 				}
 			}
 			putstr("\n");
 			putstr("System disk: %s\n", disk_to_string(system_disk));
 			putstr("\n");
+
+      dump_regs();
 		} else {
 			putstr("usage: info\n");
 		}
@@ -481,14 +506,13 @@ static void execute(char* str)
 		// Clone command: clone system disk in another disk
 		if(argc == 2) {
 			SFS_ENTRY entry;
-			uint disk, disk_index;
-			uint sysdisk_index = disk_to_index(system_disk);
+			uint disk;
 
 			// Show source disk info
 			putstr("System disk: %s    fs=%s  size=%uMB\n",
 				disk_to_string(system_disk),
-				disk_info[sysdisk_index].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
-				blocks_to_MB(disk_info[sysdisk_index].fssize));
+				disk_info[system_disk].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
+				blocks_to_MB(disk_info[system_disk].fssize));
 
 			// Check target disk
 			disk = string_to_disk(argv[1]);
@@ -502,18 +526,17 @@ static void execute(char* str)
 			}
 
 			// Show target disk info
-			disk_index = disk_to_index(disk);
 			putstr("Target disk: %s    fs=%s  size=%uMB\n",
 				disk_to_string(disk),
-				disk_info[disk_index].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
-				blocks_to_MB(disk_info[disk_index].fssize));
+				disk_info[disk].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
+				blocks_to_MB(disk_info[disk].fssize));
 
 			putstr("\n");
 
 			// User should know this
 			putstr("Target disk (%s) will lose all data\n", disk_to_string(disk));
 			putstr("Target disk (%s) will contain a %uMB NSFS filesystem after operation\n",
-				disk_to_string(disk), disk_info[disk_index].size);
+				disk_to_string(disk), disk_info[disk].size);
 
 			// Ask for confirmation
 			putstr("\n");
@@ -604,9 +627,9 @@ static void execute(char* str)
 		// Time command: Show date and time
 		if(argc == 1) {
 			time_t ctime;
-			time(&ctime);
+			get_datetime(&ctime);
 
-			putstr("\n%4d/%2d/%2d 2%d:%2d:%2d\n\n",
+			putstr("\n%4d/%2d/%2d %2d:%2d:%2d\n\n",
 				ctime.year,
 				ctime.month,
 				ctime.day,
@@ -625,7 +648,6 @@ static void execute(char* str)
 			putstr("\n");
 			putstr("clone    - clone system in another disk\n");
 			putstr("cls      - clear the screen\n");
-			putstr("config   - show or set config\n");
 			putstr("copy     - create a copy of a file or directory\n");
 			putstr("delete   - delete entry\n");
 			putstr("help     - show this help\n");
@@ -675,32 +697,18 @@ static void execute(char* str)
 		if(result < ERROR_ANY) {
 			// Found
 			if(entry.flags & T_FILE) {
-				uint offset = 0;
 				// It's a file: load it
-				uint mem_size = min((uint)entry.size, UPROG_ARGLOC-UPROG_MEMLOC);
-				if(mem_size < (uint)entry.size) {
+				if(UPROG_MEMMAX < entry.size) {
 					putstr("not enough memory\n");
 					return;
 				}
 
-				while(offset < mem_size) {
-					uint r;
-					uint count;
-					char buff[512];
-					count = min(mem_size-offset, sizeof(buff));
-					r = fs_read_file(buff, prog_file_name, offset, count);
-					if(r<ERROR_ANY) {
-						uint8_t* ptr = (uint8_t*)UPROG_MEMLOC;
-						for(uint b=0; b<r; b++) {
-							ptr[offset+b] = buff[b];
-						}
-						offset += r;
-					} else  {
-						putstr("error loading file\n");
-						debug_putstr("error loading file\n");
-						result = ERROR_IO;
-						break;
-					}
+				uint r = fs_read_file((void*)UPROG_MEMLOC, prog_file_name, 0, entry.size);
+				if(r>=ERROR_ANY) {
+					putstr("error loading file\n");
+					debug_putstr("error loading file\n");
+					result = ERROR_IO;
+					return;
 				}
 			} else {
 				// It's not a file: error
@@ -734,10 +742,10 @@ static void execute(char* str)
 			debug_putstr("CLI: Running program %s (%d bytes)\n",
 				prog_file_name, (uint)entry.size);
 
-			int (*uprog)(int, void*) = (void*)UPROG_MEMLOC;
+			int (*user_prog)(int, void*) = (void*)UPROG_MEMLOC;
 
 			// Run program
-			uprog(argc, (void*)UPROG_ARGLOC);
+			user_prog(argc, (void*)UPROG_ARGLOC);
 		}
 	}
 }

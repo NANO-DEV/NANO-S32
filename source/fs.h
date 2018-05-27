@@ -125,11 +125,11 @@ typedef struct {             // On-disk entry structure
 // programs/edit.bin
 
 // When disks must be referenced by uint disk, valid values are
-// stored in disk_info[].id. Usually:
+// disk_info[] indices. Usually:
 // fd0 : 0x00
 // fd1 : 0x01
-// hd0 : 0x80
-// hd1 : 0x81
+// hd0 : 0x02
+// hd1 : 0x03
 
 // Init filesystem info
 // Call this to update internal file system related disk info
@@ -137,10 +137,9 @@ void fs_init_info();
 
 // Get filesystem info
 // Output: info
-// disk_index has a special meaning in this function,
-// and is referred to the index on currently available disks list.
+// disk refers to the index on currently available disks list.
 // returns number of available disks
-uint fs_get_info(uint disk_index, FS_INFO* info);
+uint fs_get_info(uint disk, FS_INFO* info);
 
 // Get filesystem entry
 // Output: entry
@@ -156,7 +155,7 @@ uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk);
 // Output: buff
 // Reads count bytes of path file starting at byte offset inside this file.
 // Returns number of readed bytes or ERROR_NOT_FOUND
-uint fs_read_file(char* buff, char* path, uint offset, uint count);
+uint fs_read_file(void* buff, char* path, uint offset, size_t count);
 
 // Write file flags
 #define WF_CREATE   0x0001 // Create file if it does not exist
@@ -167,7 +166,7 @@ uint fs_read_file(char* buff, char* path, uint offset, uint count);
 // If target file is not big enough, its size is increased.
 // Depending on flags, path file can be created or truncated.
 // Returns number of written bytes or ERROR_NOT_FOUND
-uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags);
+uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint flags);
 
 // Move entry
 // In the case of directories, they are recursively moved
@@ -220,6 +219,11 @@ uint fs_fstime_to_systime(uint32_t fst, time_t* syst);
 // Convert system time_t to fs time
 // See fs time format specification above
 uint32_t fs_systime_to_fstime(time_t* syst);
+
+// Auxiliar functions
+const char* disk_to_string(uint disk);
+uint string_to_disk(const char* str);
+uint blocks_to_MB(uint blocks);
 
 #endif // MKFS
 

@@ -19,7 +19,7 @@ uint syscall(uint service, void* param)
 // x86 specific helper function
 static inline void stosb(void* addr, int data, size_t cnt)
 {
-  asm volatile("cld; rep stosb" :
+  __asm__ volatile("cld; rep stosb" :
                "=D" (addr), "=c" (cnt) :
                "0" (addr), "1" (cnt), "a" (data) :
                "memory", "cc");
@@ -132,6 +132,24 @@ size_t memcpy(void* dst, const void* src, uint n)
     vdst[c] = vsrc[c];
   }
   return i;
+}
+
+// Allocate memory
+void* malloc(size_t size)
+{
+  return (void*)syscall(SYSCALL_MEM_ALLOCATE, &size);
+}
+
+// Free memory
+void mfree(void* ptr)
+{
+  syscall(SYSCALL_MEM_FREE, ptr);
+}
+
+// Clear the screen
+void clear_screen()
+{
+  syscall(SYSCALL_IO_CLEAR_SCREEN, 0);
 }
 
 // Format and output a string char by char
@@ -255,7 +273,19 @@ void debug_putstr(const char* format, ...)
 // Put char in screen
 void putc(char c)
 {
-  syscall(SYSCALL_IO_OUT_CHAR, &c);
+  uint ac = (uint8_t)c;
+  syscall(SYSCALL_IO_OUT_CHAR, &ac);
+}
+
+// Put char in screen
+void putc_attr(uint col, uint row, char c, uint8_t attr)
+{
+  TSYSCALL_POSATTR ca;
+  ca.x = col;
+  ca.y = row;
+  ca.c = c;
+  ca.attr = attr;
+  syscall(SYSCALL_IO_OUT_CHAR_ATTR, &ca);
 }
 
 // Put formatted string in screen
@@ -469,7 +499,13 @@ uint format(uint disk)
 }
 
 // Get current system date and time
-void time(time_t* t)
+void get_datetime(time_t* t)
 {
-  syscall(SYSCALL_TIME_GET, t);
+  syscall(SYSCALL_DATETIME_GET, t);
+}
+
+// Get current system timer (miliseconds)
+uint get_timer()
+{
+  return syscall(SYSCALL_TIMER_GET, 0);
 }

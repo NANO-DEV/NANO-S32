@@ -8,22 +8,22 @@ CC = gcc
 LD = ld
 NASM = nasm
 
-CFLAGS  := -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -m32 -Wextra -fno-omit-frame-pointer -fno-stack-protector
+CFLAGS  := -std=c99 -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -m32 -Wextra -fno-omit-frame-pointer -fno-stack-protector
 LDFLAGS := -melf_i386 --oformat binary
 
 all: $(BOOTDIR)boot.bin kernel.n32 programs
 
-programs: $(PROGDIR)test.bin
+programs: $(PROGDIR)test.bin $(PROGDIR)edit.bin
 
 $(PROGDIR)%.bin: $(PROGDIR)%.c $(ULIBDIR)ulib.o
 	$(CC) $(CFLAGS) -I. -o $(PROGDIR)$*.o -c $(PROGDIR)$*.c
-	$(LD) $(LDFLAGS) -s -N -e main -Ttext 0x10000 -o $@ $(PROGDIR)$*.o $(ULIBDIR)ulib.o
+	$(LD) $(LDFLAGS) -s -N -e main -Ttext 0x20000 -o $@ $(PROGDIR)$*.o $(ULIBDIR)ulib.o
 
 $(BOOTDIR)boot.bin: $(BOOTDIR)boot.s
 	$(NASM) -O0 -w+orphan-labels -f bin -o $@ $(BOOTDIR)boot.s
 
 kernel.n32: load.o kernel.o hwio.o fs.o x86.o $(ULIBDIR)ulib.o
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0x8000 -o $@ load.o kernel.o hwio.o fs.o x86.o $(ULIBDIR)ulib.o
+	$(LD) $(LDFLAGS) -N -e start -Ttext 0x8000 -o $@ load.o x86.o kernel.o hwio.o fs.o $(ULIBDIR)ulib.o
 
 load.o: load.S
 	$(CC) $(CFLAGS) -o $@ -c load.S

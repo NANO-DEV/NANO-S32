@@ -39,6 +39,12 @@ char* strtok(char* src, char** next, char delim);
 // until *next = 0
 //
 
+// Allocate size bytes of memory
+void* malloc(size_t size);
+
+// Free allocated memory
+void mfree(void* ptr);
+
 
 // Cursor management
 void get_cursor_pos(uint* col, uint* row);
@@ -93,12 +99,53 @@ int getstr(char* str, size_t n);
 // pressed. Unused str characters are set to 0.
 // Returns number of elements in str
 
+// Attribute flags for function putc_attr
+// AT_T_ defines text color
+// AT_B_ defines background color
+#define AT_T_BLACK    0x00
+#define AT_T_BLUE     0x01
+#define AT_T_GREEN    0x02
+#define AT_T_CYAN     0x03
+#define AT_T_RED      0x04
+#define AT_T_MAGENTA  0x05
+#define AT_T_BROWN    0x06
+#define AT_T_LGRAY    0x07
+#define AT_T_DGRAY    0x08
+#define AT_T_LBLUE    0x09
+#define AT_T_LGREEN   0x0A
+#define AT_T_LCYAN    0x0B
+#define AT_T_LRED     0x0C
+#define AT_T_LMAGENTA 0x0D
+#define AT_T_YELLOW   0x0E
+#define AT_T_WHITE    0x0F
+
+#define AT_B_BLACK    0x00
+#define AT_B_BLUE     0x10
+#define AT_B_GREEN    0x20
+#define AT_B_CYAN     0x30
+#define AT_B_RED      0x40
+#define AT_B_MAGENTA  0x50
+#define AT_B_BROWN    0x60
+#define AT_B_LGRAY    0x70
+#define AT_B_DGRAY    0x80
+#define AT_B_LBLUE    0x90
+#define AT_B_LGREEN   0xA0
+#define AT_B_LCYAN    0xB0
+#define AT_B_LRED     0xC0
+#define AT_B_LMAGENTA 0xD0
+#define AT_B_YELLOW   0xE0
+#define AT_B_WHITE    0xF0
+
+// Put char and put formatted string in screen
+void putc(char c);
+void putc_attr(uint col, uint row, char c, uint8_t attr);
+void clear_screen();
+
 // Put char and put formatted string in screen
 // Supports:
 // %d (int), %u (uint), %x (uint),
 // %s (char*), %c (uchar)
 // Width modifiers allowed: %2d, %4x...
-void putc(char c);
 void putstr(const char* format, ...);
 
 // Formatted strings in serial port and debug output.
@@ -109,7 +156,10 @@ void debug_putstr(const char* format, ...);
 
 
 // Get current system date and time
-void time(time_t* t);
+void get_datetime(time_t* t);
+
+// Get current system timer (miliseconds)
+uint get_timer();
 
 
 // File system related
@@ -161,11 +211,6 @@ typedef struct {
 // FS_INFO.fs_type types
 #define FS_TYPE_UNKNOWN 0x000
 #define FS_TYPE_NSFS    0x001
-
-uint disk_to_index(uint disk);
-char* disk_to_string(uint disk);
-uint string_to_disk(char* str);
-uint32_t blocks_to_MB(uint32_t blocks);
 
 typedef struct {
   char  name[4];

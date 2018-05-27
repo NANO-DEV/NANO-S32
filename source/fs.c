@@ -6,54 +6,26 @@
 #include "ulib/ulib.h"
 #include "fs.h"
 
-char disk_buff[SECTOR_SIZE];
-
 // See fs.h for more detailed description
 // of file system and functions
 
-
-// Disk id to disk index
-uint disk_to_index(uint disk)
+// Disk to string
+const char* disk_to_string(uint disk)
 {
-  uint index;
-  for(index=0; index<MAX_DISK; index++) {
-    if(disk_info[index].id == disk) {
-      return index;
-    }
-  }
-  return ERROR_NOT_FOUND;
-}
-
-// Disk index to disk id
-uint index_to_disk(uint index)
-{
-  if(index < MAX_DISK) {
-    return disk_info[index].id;
-  }
-
-  return ERROR_NOT_FOUND;
-}
-
-// Disk id to string
-char* disk_to_string(uint disk)
-{
-  uint index;
-  for(index=0; index<MAX_DISK; index++) {
-    if(disk_info[index].id == disk) {
-      return disk_info[index].name;
-    }
+  if(disk < MAX_DISK) {
+    return disk_info[disk].name;
   }
 
   return "unk";
 }
 
-// String to disk id
-uint string_to_disk(char* str)
+// String to disk
+uint string_to_disk(const char* str)
 {
   uint index;
   for(index=0; index<MAX_DISK; index++) {
     if(strcmp(str, disk_info[index].name) == 0) {
-      return disk_info[index].id;
+      return index;
     }
   }
 
@@ -66,8 +38,7 @@ uint string_is_disk(char* str)
   uint index = 0;
 
   for(index=0; index<MAX_DISK; index++) {
-    uint disk = index_to_disk(index);
-    if(strcmp(str, disk_to_string(disk)) == 0) {
+    if(strcmp(str, disk_info[index].name) == 0) {
       return 1;
     }
   }
@@ -75,9 +46,9 @@ uint string_is_disk(char* str)
 }
 
 // Convert number of blocks to size in MB
-uint32_t blocks_to_MB(uint32_t blocks)
+uint blocks_to_MB(uint blocks)
 {
-  return ((uint32_t)blocks*(uint32_t)BLOCK_SIZE)/1048576L;
+  return (blocks*BLOCK_SIZE)/1048576;
 }
 
 // Convert a user input entry name to a valid name.
@@ -106,202 +77,62 @@ static char* string_to_name(char* str)
 
 // Read disk, specific block, offset and size
 // Returns 0 on success, another value otherwise
-static uint read_disk(uint disk, uint block, uint offset, uint buff_size, char* buff)
+static uint read_disk(uint disk, uint block, uint offset, size_t size, void* buff)
 {
-  uint n_sectors = 0;
-  uint i = 0;
-  uint result = 0;
-  uint sector;
-
-  // Check params
-  if(buff == 0) {
-    debug_putstr("Read disk: bad buffer\n");
-    return 1;
-  }
-
-  if(disk_info[disk_to_index(disk)].size == 0) {
-    debug_putstr("Read disk: bad disk\n");
-    return 1;
-  }
+  uint sector = 0;
 
   // Convert blocks to sectors
-  if(BLOCK_SIZE >= SECTOR_SIZE) {
-    sector = block * (BLOCK_SIZE / SECTOR_SIZE);
-  } else {
-    sector = block * (SECTOR_SIZE / BLOCK_SIZE);
-  }
+  sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
 
   // Compute initial sector and offset
-  sector += offset / SECTOR_SIZE;
-  offset = offset % SECTOR_SIZE;
+  sector += offset / DISK_SECTOR_SIZE;
+  offset = offset % DISK_SECTOR_SIZE;
 
-  // io_disk_read_sector can only read entire and aligned sectors.
-  // If requested offset is unaligned to sectors, read an entire
-  // sector and copy only requested bytes in buff
-  if(offset) {
-    result = io_disk_read_sector(disk, sector, 1, disk_buff);
-    i = min(SECTOR_SIZE-offset, buff_size);
-    memcpy(buff, &disk_buff[offset], i);
-    sector++;
-    buff_size -= i;
-  }
-
-  // Now read aligned an entire sectors
-  n_sectors = buff_size / SECTOR_SIZE;
-
-  if(n_sectors && result == 0) {
-    // Try to read all sectors at once
-    result = io_disk_read_sector(disk, sector, n_sectors, buff+i);
-
-    // Handle DMA access 64kb boundary. Read sector by sector
-    if(result == 0x900) {
-      debug_putstr("Read disk: DMA access accross 64Kb boundary. Reading sector by sector\n");
-      for(; n_sectors > 0; n_sectors--) {
-        result = io_disk_read_sector(disk, sector, 1, disk_buff);
-        if(result != 0) {
-          break;
-        }
-        memcpy(&buff[i], disk_buff, SECTOR_SIZE);
-        i += SECTOR_SIZE;
-        sector++;
-        buff_size -= SECTOR_SIZE;
-      }
-    } else {
-      buff_size -= SECTOR_SIZE * n_sectors;
-      sector += n_sectors;
-      i += SECTOR_SIZE * n_sectors;
-    }
-  }
-
-  // io_disk_read_sector can only read entire and aligned sectors.
-  // If requested size exceeds entire sectors, read
-  // an entire sector and copy only requested bytes
-  if(buff_size && result == 0) {
-    result = io_disk_read_sector(disk, sector, 1, disk_buff);
-    memcpy(&buff[i], disk_buff, buff_size);
-  }
-
-  if(result != 0) {
-    debug_putstr("Read disk error (%x)\n", result);
-  }
-
-  return result;
+  return io_disk_read(disk, sector, offset, size, buff);
 }
 
 // Write disk, specific sector, offset and size
 // Returns 0 on success, another value otherwise
-static uint write_disk(uint disk, uint block, uint offset, uint buff_size, char* buff)
+static uint write_disk(uint disk, uint block, uint offset, size_t size, const void* buff)
 {
-  uint n_sectors = 0;
-  uint i = 0;
-  uint result = 0;
-  uint sector;
-
-  // Check params
-  if(buff == 0) {
-    debug_putstr("Write disk: bad buffer\n");
-    return 1;
-  }
-
-  if(disk_info[disk_to_index(disk)].size == 0) {
-    debug_putstr("Write disk: bad disk\n");
-    return 1;
-  }
+  uint sector = 0;
 
   // Convert blocks to sectors
-  if(BLOCK_SIZE >= SECTOR_SIZE) {
-    sector = block * (BLOCK_SIZE / SECTOR_SIZE);
-  } else {
-    sector = block * (SECTOR_SIZE / BLOCK_SIZE);
-  }
+  sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
 
   // Compute initial sector and offset
-  sector += offset / SECTOR_SIZE;
-  offset = offset % SECTOR_SIZE;
+  sector += offset / DISK_SECTOR_SIZE;
+  offset = offset % DISK_SECTOR_SIZE;
 
-  // io_disk_write_sector can only write entire and aligned sectors.
-  // If requested offset is unaligned to sectors, read an entire
-  // sector, overwrite requested bytes, and write it
-  if(offset) {
-    result += io_disk_read_sector(disk, sector, 1, disk_buff);
-    i = min(SECTOR_SIZE-offset, buff_size);
-    memcpy(&disk_buff[offset], buff, i);
-    result += io_disk_write_sector(disk, sector, 1, disk_buff);
-    sector++;
-    buff_size -= i;
-  }
-
-  // Now write aligned an entire sectors
-  n_sectors = buff_size / SECTOR_SIZE;
-
-  if(n_sectors && result == 0) {
-    // Try to write all sectors at once
-    result += io_disk_write_sector(disk, sector, n_sectors, &buff[i]);
-    // Handle DMA access 64kb boundary. Write sector by sector
-    if(result == 0x900) {
-      debug_putstr("Write disk: DMA access accross 64Kb boundary. Writting sector by sector\n");
-      for(; n_sectors > 0; n_sectors--) {
-        memcpy(disk_buff, &buff[i], SECTOR_SIZE);
-        result = io_disk_write_sector(disk, sector, 1, disk_buff);
-        if(result != 0) {
-          break;
-        }
-        i += SECTOR_SIZE;
-        sector++;
-        buff_size -= SECTOR_SIZE;
-      }
-    } else {
-      buff_size -= SECTOR_SIZE * n_sectors;
-      sector += n_sectors;
-      i += SECTOR_SIZE * n_sectors;
-    }
-  }
-
-  // io_disk_write_sector can only write entire and aligned sectors.
-  // If requested size exceeds entire sectors, read
-  // an entire sector, overwrite requested bytes, and write
-  if(buff_size && result == 0) {
-    result += io_disk_read_sector(disk, sector, 1, disk_buff);
-    memcpy(disk_buff, &buff[i], buff_size);
-    result += io_disk_write_sector(disk, sector, 1, disk_buff);
-  }
-
-  if(result != 0) {
-    debug_putstr("Write disk error (%x)\n", result);
-  }
-
-  return result;
+  return io_disk_write(disk, sector, offset, size, buff);
 }
 
 // Get filesystem info
-uint fs_get_info(uint disk_index, FS_INFO* info)
+uint fs_get_info(uint disk, FS_INFO* info)
 {
-  uint i, j = 0xFFFF, n = 0;
+  uint n = 0;
 
   // Check parameters
-  if(info == 0) {
+  if(info == 0 || disk >= MAX_DISK) {
     return 1;
   }
 
-  // Count avaliable disks (n) and return index of avaliable disks
-  // number disk_index (j)
-  n = 0;
-  for(i=0; i<MAX_DISK; i++) {
+  // Count avaliable disks (n)
+  for(uint i=0; i<MAX_DISK; i++) {
     if(disk_info[i].size != 0) {
-      if(n == disk_index) {
-        j = i;
+      if(n == disk) {
+        n++;
       }
-      n++;
     }
   }
 
-  // If found, fill info
-  if(j != 0xFFFF) {
-    info->id = index_to_disk(j);
+  // Fill info
+  if(disk_info[disk].size != 0) {
+    info->id = disk;
     strncpy(info->name, disk_to_string(info->id), sizeof(info->name));
-    info->fs_type = disk_info[j].fstype;
-    info->fs_size = blocks_to_MB(disk_info[j].fssize);
-    info->disk_size = disk_info[j].size;
+    info->fs_type = disk_info[disk].fstype;
+    info->fs_size = blocks_to_MB(disk_info[disk].fssize);
+    info->disk_size = disk_info[disk].size;
   }
 
   return n;
@@ -315,13 +146,13 @@ void fs_init_info()
 
   // For each disk
   for(uint disk_index=0; disk_index<MAX_DISK; disk_index++) {
-    debug_putstr("Check filesystem in %2x: ", index_to_disk(disk_index));
+    debug_putstr("Check filesystem in %2x: ", disk_index);
 
     // If hardware related disk info is valid
     if(disk_info[disk_index].size != 0) {
       // Read superblock and check file system type and data
       SFS_SUPERBLOCK sb;
-      result = read_disk(index_to_disk(disk_index), 1, 0, sizeof(sb),(char*)&sb);
+      result = read_disk(disk_index, 1, 0, sizeof(sb), &sb);
       if(result == 0 && sb.type == SFS_TYPE_ID) {
         disk_info[disk_index].fstype = FS_TYPE_NSFS;
         disk_info[disk_index].fssize = sb.size;
@@ -414,17 +245,15 @@ static uint path_parse_disk_parent_name(char** name, uint* parent, uint* disk, c
 
 // Get entry by disk and index
 // Returns the input index or ERROR_IO. Does check nothing
-static uint get_entry_n(SFS_ENTRY* entry, uint disk, uint n)
+static uint get_entry_n(SFS_ENTRY* entry, uint disk, size_t n)
 {
   // Compute block number and offset
-  uint32_t block = 2L +
-    ((uint32_t)n*(uint32_t)sizeof(SFS_ENTRY))/(uint32_t)BLOCK_SIZE;
+  uint block = 2 + (n * sizeof(SFS_ENTRY)) / BLOCK_SIZE;
 
-  uint32_t offset = ((uint32_t)n *
-    (uint32_t)sizeof(SFS_ENTRY)) % (uint32_t)BLOCK_SIZE;
+  uint offset = (n * sizeof(SFS_ENTRY)) % BLOCK_SIZE;
 
   // Read and return
-  uint result = read_disk(disk, (uint)block, (uint)offset,
+  uint result = read_disk(disk, block, offset,
     sizeof(SFS_ENTRY), (char*)entry);
 
   return result != 0 ? ERROR_IO : n;
@@ -464,7 +293,7 @@ uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk)
   }
 
   // Read superblock
-  result = read_disk(disk, 1, 0, sizeof(sb), (char*)&sb);
+  result = read_disk(disk, 1, 0, sizeof(sb), (void*)&sb);
   if(result != 0) {
     return ERROR_IO;
   }
@@ -498,13 +327,13 @@ static uint get_nref_entry_from_entry(SFS_ENTRY* outentry,
 {
   // Initialize return entry information to the first entry
   uint result = nentry;
-  memcpy((char*)outentry, (char*)entry, sizeof(SFS_ENTRY));
+  memcpy(outentry, entry, sizeof(SFS_ENTRY));
 
   // While reference index exceeds number of references in an entry
   while((nref = nref / SFS_ENTRYREFS) > 0) {
     if(outentry->next) {
       // Advance tot he next chained entry
-      result = get_entry_n(outentry, disk, (uint)outentry->next);
+      result = get_entry_n(outentry, disk, outentry->next);
       if(result >= ERROR_ANY) {
         return result;
       }
@@ -516,7 +345,7 @@ static uint get_nref_entry_from_entry(SFS_ENTRY* outentry,
 }
 
 // Read file in buff, given path, offset and count
-uint fs_read_file(char* buff, char* path, uint offset, uint count)
+uint fs_read_file(void* buff, char* path, uint offset, size_t count)
 {
   SFS_ENTRY entry;
   uint nentry;
@@ -525,6 +354,7 @@ uint fs_read_file(char* buff, char* path, uint offset, uint count)
   uint block;
 
   // Find entry
+  debug_putstr("fs_read_file %x %s %u %u\n", buff, path, offset, count);
   uint disk = path_get_disk(path);
   nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(nentry < ERROR_ANY && (entry.flags & T_FILE)) {
@@ -542,14 +372,15 @@ uint fs_read_file(char* buff, char* path, uint offset, uint count)
       block = block % SFS_ENTRYREFS;
 
       // Read in buffer
+      const size_t n = min(BLOCK_SIZE-offset, count-read);
       result = read_disk(disk, entry.ref[block % SFS_ENTRYREFS], offset,
-        min(BLOCK_SIZE-offset, count-read), &(buff[read]));
+        n, buff + read);
 
       if(result != 0) {
         return ERROR_IO;
       }
 
-      read += min(BLOCK_SIZE - offset, count);
+      read += n;
       block++;
       offset = 0;
     }
@@ -557,22 +388,21 @@ uint fs_read_file(char* buff, char* path, uint offset, uint count)
   } else {
     result = nentry;
   }
+
   return result;
 }
 
 // Write entry by index at disk
-static uint write_entry(SFS_ENTRY* entry, uint disk, uint n)
+static uint write_entry(SFS_ENTRY* entry, uint disk, size_t n)
 {
   // Compute block number and offset
-  uint32_t block = 2L +
-    ((uint32_t)n*(uint32_t)sizeof(SFS_ENTRY))/(uint32_t)BLOCK_SIZE;
+  uint block = 2 + (n*sizeof(SFS_ENTRY)) / BLOCK_SIZE;
 
-  uint32_t offset = ((uint32_t)n *
-    (uint32_t)sizeof(SFS_ENTRY)) % (uint32_t)BLOCK_SIZE;
+  uint offset = (n*sizeof(SFS_ENTRY)) % BLOCK_SIZE;
 
   // Write and return
-  uint result = write_disk(disk, (uint)block, (uint)offset,
-    sizeof(SFS_ENTRY), (char*)entry);
+  uint result = write_disk(disk, block, offset,
+    sizeof(SFS_ENTRY), entry);
 
   return result != 0 ? ERROR_IO : 0;
 }
@@ -585,7 +415,7 @@ static uint set_entry_time_to_current(uint disk, uint nentry)
   uint32_t fstime;
 
   // Get time and convert to fs time
-  time(&ctime);
+  get_datetime(&ctime);
   fstime = fs_systime_to_fstime(&ctime);
 
   // Set in initial entry and all chained entries
@@ -614,7 +444,7 @@ static uint find_free_entry(uint disk)
   uint n = 0;
 
   // Read super block
-  uint result = read_disk(disk, 1, 0, sizeof(sb), (char*)&sb);
+  uint result = read_disk(disk, 1, 0, sizeof(sb), &sb);
   if(result != 0) {
     return ERROR_IO;
   }
@@ -635,9 +465,9 @@ static uint find_free_entry(uint disk)
 }
 
 // Get number of needed blocks to contain a given size (bytes)
-static uint needed_blocks(uint size)
+static size_t needed_blocks(size_t size)
 {
-  uint nblocks = size / BLOCK_SIZE;
+  size_t nblocks = size / BLOCK_SIZE;
   if(size % BLOCK_SIZE) {
     nblocks++;
   }
@@ -658,14 +488,14 @@ static uint find_free_block(uint disk)
   uint found = 0;
 
   // Read superblock
-  uint result = read_disk(disk, 1, 0, sizeof(sb), (char*)&sb);
+  uint result = read_disk(disk, 1, 0, sizeof(sb), &sb);
   if(result != 0) {
     return ERROR_IO;
   }
 
   // Compute first data block index
   first_data_block = 2L +
-    ((uint32_t)sb.nentries*(uint32_t)sizeof(SFS_ENTRY))/(uint32_t)BLOCK_SIZE;
+    (sb.nentries*sizeof(SFS_ENTRY))/BLOCK_SIZE;
 
   // For each possible block index
   max_blocks = sb.size;
@@ -725,7 +555,7 @@ static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
   // Advance to the last chained entry, create if needed
   while(nentries > 0) {
     if(entry.next) {
-      nentry = get_entry_n(&entry, disk, (uint)entry.next);
+      nentry = get_entry_n(&entry, disk, entry.next);
       if(nentry >= ERROR_ANY) {
         return nentry;
       }
@@ -787,7 +617,7 @@ static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
 }
 
 // Set entry size value, and update also chained entries
-static uint set_entry_size(uint disk, uint nentry, uint size)
+static uint set_entry_size(uint disk, uint nentry, size_t size)
 {
   SFS_ENTRY entry;
   uint result;
@@ -820,7 +650,7 @@ static uint get_entry_refcount(SFS_ENTRY* entry)
 {
   uint refcount = 0;
   if(entry->flags & T_FILE) {
-    refcount = needed_blocks((uint)entry->size);
+    refcount = needed_blocks(entry->size);
   } else if(entry->flags & T_DIR) {
     refcount = entry->size;
   }
@@ -874,7 +704,7 @@ static uint add_ref_in_entry(uint disk, uint nentry, uint ref)
 
   // Update size if it's a directory
   if(entry.flags & T_DIR) {
-    result = set_entry_size(disk, nentry, (uint)entry.size + 1);
+    result = set_entry_size(disk, nentry, entry.size + 1);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -901,8 +731,8 @@ static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
   if(result >= ERROR_ANY) {
     return result;
   }
-  memcpy((char*)&currentry, (char*)&entry, sizeof(entry));
-  memcpy((char*)&nextentry, (char*)&entry, sizeof(entry));
+  memcpy(&currentry, &entry, sizeof(entry));
+  memcpy(&nextentry, &entry, sizeof(entry));
 
   // Get total number of references
   refcount = get_entry_refcount(&entry);
@@ -914,7 +744,7 @@ static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
       if(result >= ERROR_ANY) {
         return result;
       }
-      ncurrentry = get_entry_n(&currentry, disk, (uint)currentry.next);
+      ncurrentry = get_entry_n(&currentry, disk, currentry.next);
       if(ncurrentry >= ERROR_ANY) {
         return ncurrentry;
       }
@@ -923,7 +753,7 @@ static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
     }
     else if(r + 1 == SFS_ENTRYREFS) {
       if(nextentry.next) {
-        result = get_entry_n(&nextentry, disk, (uint)nextentry.next);
+        result = get_entry_n(&nextentry, disk, nextentry.next);
         if(result >= ERROR_ANY) {
           return result;
         }
@@ -962,7 +792,7 @@ static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
 }
 
 // Write buff to file given path, offset, count and flags
-uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
+uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint flags)
 {
   uint disk;
   uint nentry;
@@ -1014,7 +844,7 @@ uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
     }
 
     // Add reference in parent
-    result = add_ref_in_entry(disk, (uint)entry.parent, nentry);
+    result = add_ref_in_entry(disk, entry.parent, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -1022,7 +852,7 @@ uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
 
   // Resize: grow if needed
   if(entry.size < offset + count) {
-    uint current_block = needed_blocks((uint)entry.size);
+    uint current_block = needed_blocks(entry.size);
     uint final_block = needed_blocks(offset + count);
     uint ntentry;
 
@@ -1049,7 +879,7 @@ uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
         if(result >= ERROR_ANY) {
           return result;
         }
-        ntentry = get_entry_n(&tentry, disk, (uint)tentry.next);
+        ntentry = get_entry_n(&tentry, disk, tentry.next);
         if(ntentry >= ERROR_ANY) {
           return ntentry;
         }
@@ -1093,15 +923,15 @@ uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
     uint to_copy = min(count, BLOCK_SIZE - (offset % BLOCK_SIZE));
     uint current_block = needed_blocks(offset + to_copy) - 1;
     while(current_block > SFS_ENTRYREFS) {
-      result = get_entry_n(&entry, disk, (uint)entry.next);
+      result = get_entry_n(&entry, disk, entry.next);
       if(result >= ERROR_ANY) {
         return result;
       }
       offset -= SFS_ENTRYREFS*BLOCK_SIZE;
       current_block -= SFS_ENTRYREFS;
     }
-    result = write_disk(disk, (uint)entry.ref[current_block],
-      offset%BLOCK_SIZE, to_copy, &buff[written]);
+    result = write_disk(disk, entry.ref[current_block],
+      offset%BLOCK_SIZE, to_copy, buff + written);
     if(result != 0) {
       return result;
     }
@@ -1121,7 +951,7 @@ uint fs_write_file(char* buff, char* path, uint offset, uint count, uint flags)
 
 // Delete entry by index
 // Deletes the full chain
-static uint delete_n(uint disk, uint n)
+static uint delete_n(uint disk, size_t n)
 {
   SFS_ENTRY entry;
 
@@ -1131,7 +961,7 @@ static uint delete_n(uint disk, uint n)
   }
 
   // Delete reference in parent
-  result = remove_ref_in_entry(disk, (uint)entry.parent, n);
+  result = remove_ref_in_entry(disk, entry.parent, n);
   if(result >= ERROR_ANY) {
     return result;
   }
@@ -1140,7 +970,7 @@ static uint delete_n(uint disk, uint n)
   if(entry.flags & T_DIR) {
     uint b = 0;
     while(b < min(entry.size, SFS_ENTRYREFS)) {
-      result = delete_n(disk, (uint)entry.ref[b]);
+      result = delete_n(disk, entry.ref[b]);
       if(result >= ERROR_ANY) {
         return result;
       }
@@ -1150,7 +980,7 @@ static uint delete_n(uint disk, uint n)
 
   // Delete full chain
   if(entry.next) {
-    result = delete_n(disk, (uint)entry.next);
+    result = delete_n(disk, entry.next);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -1234,7 +1064,7 @@ uint fs_create_directory(char* path)
 
   // Add reference in parent
   if(nentry != entry.parent) {
-    result = add_ref_in_entry(disk, (uint)entry.parent, nentry);
+    result = add_ref_in_entry(disk, entry.parent, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -1291,7 +1121,7 @@ uint fs_move(char* srcpath, char* dstpath)
     }
   } else {
     // Else, remove reference in parent
-    result = remove_ref_in_entry(srcdisk, (uint)entry.parent, nentry);
+    result = remove_ref_in_entry(srcdisk, entry.parent, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -1306,7 +1136,7 @@ uint fs_move(char* srcpath, char* dstpath)
     }
 
     // Add reference in parent
-    result = add_ref_in_entry(dstdisk, (uint)entry.parent, nentry);
+    result = add_ref_in_entry(dstdisk, entry.parent, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -1384,7 +1214,7 @@ uint fs_copy(char* srcpath, char* dstpath)
       SFS_ENTRY tentry;
       char src_path[64];
       char dst_path[64];
-      result = get_entry_n(&tentry, src_disk, (uint)entry.ref[r]);
+      result = get_entry_n(&tentry, src_disk, entry.ref[r]);
       if(result >= ERROR_ANY) {
         return result;
       }
@@ -1426,19 +1256,19 @@ uint fs_list(SFS_ENTRY* entry, char* path, uint n)
 
   // If found, and it's a directory
   if(direntry.flags & T_DIR) {
-    if(n < (uint)direntry.size) {
+    if(n < direntry.size) {
        // Advance to the chained entry contaning the nth reference
       uint res = get_nref_entry_from_entry(&direntry, &direntry, disk, nentry, n);
       if(res >= ERROR_ANY) {
         return res;
       }
       // Get the entry
-      res = get_entry_n(entry, disk, (uint)direntry.ref[n]);
+      res = get_entry_n(entry, disk, direntry.ref[n]);
       if(res >= ERROR_ANY) {
         return res;
       }
     }
-    return (uint)direntry.size;
+    return direntry.size;
   }
   return ERROR_NOT_FOUND;
 }
@@ -1455,7 +1285,7 @@ uint fs_format(uint disk)
   uint result = 0;
   uint e;
   uint32_t disk_size;
-  uint disk_index = disk_to_index(disk);
+  uint disk_index = disk;
 
   debug_putstr("format disk: %x (system_disk=%x)\n", disk, system_disk);
 
@@ -1471,14 +1301,14 @@ uint fs_format(uint disk)
   }
 
   // Create superblock
-  disk_size = (uint32_t)disk_info[disk_index].sectors *
-    (uint32_t)disk_info[disk_index].sides *
-    (uint32_t)disk_info[disk_index].cylinders;
+  disk_size = disk_info[disk_index].sectors *
+    disk_info[disk_index].sides *
+    disk_info[disk_index].cylinders;
 
-  if(SECTOR_SIZE > BLOCK_SIZE) {
-    disk_size *= (uint32_t)(SECTOR_SIZE/BLOCK_SIZE);
+  if(DISK_SECTOR_SIZE > BLOCK_SIZE) {
+    disk_size *= (DISK_SECTOR_SIZE/BLOCK_SIZE);
   } else {
-    disk_size /= (uint32_t)(BLOCK_SIZE/SECTOR_SIZE);
+    disk_size /= (BLOCK_SIZE/DISK_SECTOR_SIZE);
   }
 
   memset(buff, 0, sizeof(buff));
@@ -1486,10 +1316,10 @@ uint fs_format(uint disk)
   sb->type = SFS_TYPE_ID;
   sb->size = disk_size;
   sb->nentries = min(
-    (uint32_t)(((sb->size * (uint32_t)BLOCK_SIZE)/10L)/(uint32_t)sizeof(SFS_ENTRY)),
-    1024L);
-  sb->bootstart = 2L + (sb->nentries * (uint32_t)sizeof(SFS_ENTRY)) / (uint32_t)BLOCK_SIZE;
-  result = write_disk(disk, 1, 0, BLOCK_SIZE, (char*)sb);
+    (((sb->size * BLOCK_SIZE)/10)/sizeof(SFS_ENTRY)),
+    1024);
+  sb->bootstart = 2L + (sb->nentries * sizeof(SFS_ENTRY)) / BLOCK_SIZE;
+  result = write_disk(disk, 1, 0, BLOCK_SIZE, sb);
   if(result != 0) {
     return ERROR_IO;
   }
@@ -1554,10 +1384,10 @@ uint fs_fstime_to_systime(uint32_t fst, time_t* syst)
 {
   syst->year   = ((fst >> 22 ) & 0x3FF) / 12 + 2017;
   syst->month  = ((fst >> 22 ) & 0x3FF) % 12 + 1;
-  syst->day    = ((fst & 0x3FFFFFL) / 86400L) + 1;  // 86400=24*60*60
-  syst->hour   = ((fst & 0x3FFFFFL) / 3600L) % 24;  // 3600=60*60
-  syst->minute = ((fst & 0x3FFFFFL) / 60) % 60;
-  syst->second = (fst & 0x3FFFFFL) % 60;
+  syst->day    = ((fst & 0x3FFFFF) / 86400) + 1;  // 86400=24*60*60
+  syst->hour   = ((fst & 0x3FFFFF) / 3600) % 24;  // 3600=60*60
+  syst->minute = ((fst & 0x3FFFFF) / 60) % 60;
+  syst->second = (fst & 0x3FFFFF) % 60;
   return 0;
 }
 
@@ -1565,10 +1395,10 @@ uint fs_fstime_to_systime(uint32_t fst, time_t* syst)
 uint32_t fs_systime_to_fstime(time_t* syst)
 {
   uint32_t fst = syst->second;
-  fst += ((uint32_t)syst->minute)*60;
-  fst += ((uint32_t)syst->hour)*60*60;
-  fst += ((uint32_t)(syst->day-1))*24*60*60;
-  fst &= 0x3FFFFFL;
-  fst |= ((uint32_t)(syst->year-2017)*12 + (syst->month-1)) << 22;
+  fst += (syst->minute)*60;
+  fst += (syst->hour)*60*60;
+  fst += (syst->day-1)*24*60*60;
+  fst &= 0x3FFFFF;
+  fst |= ((syst->year-2017)*12 + (syst->month-1)) << 22;
   return fst;
 }

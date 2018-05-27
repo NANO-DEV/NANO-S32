@@ -5,18 +5,11 @@
 
 #define OS_VERSION_HI 0
 #define OS_VERSION_LO 2
-#define OS_BUILD_NUM 2
+#define OS_BUILD_NUM 3
 
 // Hardware related disk information is handled by the kernel module.
 // File system related information is handled by file system module
 #define MAX_DISK 4
-
-// Size of a disk sector
-#define SECTOR_SIZE 512
-
-// We need this buffer to be inside a 64KB bound
-// to avoid DMA error
-extern char disk_buff[SECTOR_SIZE];
 
 struct DISKINFO {
     uint  id;          // Disk id
