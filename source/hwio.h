@@ -27,6 +27,7 @@ void io_disks_init_info();
 uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff);
 uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void* buff);
 
+
 // Shutdown computer
 void apm_shutdown();
 

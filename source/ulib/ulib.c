@@ -384,7 +384,7 @@ int getstr(char* str, size_t n)
       continue;
 
     // Append char to string
-    } else if(strlen(str) < n-1) {
+  } else if(strlen(str) < n-1 && (k & 0xFF)) {
         memcpy(&str[i+1], &str[i], n-i-2);
         str[i++] = (k & 0xFF);
     }

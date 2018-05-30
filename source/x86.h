@@ -33,6 +33,7 @@ void int32(uint8_t intnum, regs16_t* regs);
 // Install ISR
 void install_ISR();
 
+// Dump registers in debug output
 void dump_regs();
 
 #endif // _X86_H

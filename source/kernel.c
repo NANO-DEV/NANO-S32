@@ -58,7 +58,7 @@ static void* heap_alloc(size_t size)
   // Find a continuous set of n_alloc free blocks
   for(i=0; i<HEAP_NUM_BLOCK; i++) {
     if(heap[i].used) {
-			debug_putstr("heap: block %u is in use (%d)\n", i, heap[i].used);
+			debug_putstr("heap: block %u is in use (%u)\n", i, heap[i].used);
       n_found = 0;
     } else {
       n_found++;
@@ -400,7 +400,7 @@ static void execute(char* str)
 
 					// Print date
 					fs_fstime_to_systime(entry.time, &etime);
-					putstr("%4d/%2d/%2d %2d:%2d:%2d\n",
+					putstr("%4u/%2u/%2u %2u:%2u:%2u\n",
 						etime.year,
 						etime.month,
 						etime.day,
@@ -512,7 +512,9 @@ static void execute(char* str)
 			putstr("System disk: %s    fs=%s  size=%uMB\n",
 				disk_to_string(system_disk),
 				disk_info[system_disk].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
-				blocks_to_MB(disk_info[system_disk].fssize));
+        disk_info[system_disk].fstype == FS_TYPE_NSFS ?
+				blocks_to_MB(disk_info[system_disk].fssize) :
+        disk_info[system_disk].size );
 
 			// Check target disk
 			disk = string_to_disk(argv[1]);
@@ -529,7 +531,9 @@ static void execute(char* str)
 			putstr("Target disk: %s    fs=%s  size=%uMB\n",
 				disk_to_string(disk),
 				disk_info[disk].fstype == FS_TYPE_NSFS ? "NSFS   " : "unknown",
-				blocks_to_MB(disk_info[disk].fssize));
+        disk_info[disk].fstype == FS_TYPE_NSFS ?
+				blocks_to_MB(disk_info[disk].fssize) :
+        disk_info[disk].size );
 
 			putstr("\n");
 
@@ -604,7 +608,10 @@ static void execute(char* str)
 			memset(buff, 0, sizeof(buff));
 			// While it can read the file, print it
 			while((result = fs_read_file(buff, argv[argc-1], offset, sizeof(buff)))) {
-				if(result >= ERROR_ANY) {
+        if(result == ERROR_NOT_FOUND) {
+          putstr("\nInvalid input file\n");
+          break;
+        } else if(result >= ERROR_ANY) {
 					putstr("\nThere was an error reading input file\n");
 					break;
 				}
@@ -612,7 +619,8 @@ static void execute(char* str)
 					if(argc==2) {
 						putc(buff[i]);
 					} else {
-						putstr("%2x ", buff[i]);
+            uint uc = (uint8_t)buff[i];
+						putstr("%2x ", uc);
 					}
 				}
 				memset(buff, 0, sizeof(buff));
@@ -629,7 +637,7 @@ static void execute(char* str)
 			time_t ctime;
 			get_datetime(&ctime);
 
-			putstr("\n%4d/%2d/%2d %2d:%2d:%2d\n\n",
+			putstr("\n%4u/%2u/%2u %2u:%2u:%2u\n\n",
 				ctime.year,
 				ctime.month,
 				ctime.day,
@@ -739,8 +747,8 @@ static void execute(char* str)
 				}
 			}
 
-			debug_putstr("CLI: Running program %s (%d bytes)\n",
-				prog_file_name, (uint)entry.size);
+			debug_putstr("CLI: Running program %s (%u bytes)\n",
+				prog_file_name, entry.size);
 
 			int (*user_prog)(int, void*) = (void*)UPROG_MEMLOC;
 

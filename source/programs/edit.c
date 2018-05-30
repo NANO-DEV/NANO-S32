@@ -16,7 +16,7 @@
 
 // Screen size
 static uint SCREEN_WIDTH = 80;
-static uint SCREEN_HEIGHT = 25;
+static uint SCREEN_HEIGHT = 28;
 
 // This buffer holds a copy of screen chars
 // Screen is only updated when it's actually needed
@@ -233,7 +233,7 @@ int main(int argc, char* argv[])
 
     if(result != entry.size) {
       mfree(buff);
-      putstr("Can't read file (readed %d bytes, expected %d)\n",
+      putstr("Can't read file (readed %u bytes, expected %u)\n",
         result, entry.size);
       return 1;
     }
@@ -242,6 +242,10 @@ int main(int argc, char* argv[])
     if(buff_size == 0 || *(buff + buff_size-1) != 0) {
       buff_size++;
     }
+  } else if(n<ERROR_ANY && !(entry.flags & FST_FILE)) {
+    mfree(buff);
+    putstr("Invalid file\n");
+    return 1;
   }
 
   // Create 1 byte buffer if this is a new file

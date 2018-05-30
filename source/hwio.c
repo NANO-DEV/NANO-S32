@@ -10,40 +10,44 @@
 uint io_getkey()
 {
   regs16_t regs;
+  uint k = 0;
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x10 << 8);
-  int32(0x16, &regs);
+  while(k==0) {
 
-  uint k = regs.ax;
-  const uint hk = (k & 0xFF00);
-  if(k != 0) {
-    if(hk==KEY_DEL    ||
-       hk==KEY_END    ||
-       hk==KEY_HOME   ||
-       hk==KEY_INS    ||
-       hk==KEY_PG_DN  ||
-       hk==KEY_PG_UP  ||
-       hk==KEY_PRT_SC ||
-       hk==KEY_UP     ||
-       hk==KEY_LEFT   ||
-       hk==KEY_RIGHT  ||
-       hk==KEY_DOWN   ||
-       hk==KEY_F1     ||
-       hk==KEY_F2     ||
-       hk==KEY_F3     ||
-       hk==KEY_F4     ||
-       hk==KEY_F5     ||
-       hk==KEY_F6     ||
-       hk==KEY_F7     ||
-       hk==KEY_F8     ||
-       hk==KEY_F9     ||
-       hk==KEY_F10    ||
-       hk==KEY_F11    ||
-       hk==KEY_F12) {
-      k &= 0xFF00;
-    } else {
-      k &= 0x00FF;
+    memset(&regs, 0, sizeof(regs));
+    regs.ax = (0x00 << 8);
+    int32(0x16, &regs);
+
+    k = regs.ax;
+    const uint hk = (k & 0xFF00);
+    if(k != 0) {
+      if(hk==KEY_DEL    ||
+         hk==KEY_END    ||
+         hk==KEY_HOME   ||
+         hk==KEY_INS    ||
+         hk==KEY_PG_DN  ||
+         hk==KEY_PG_UP  ||
+         hk==KEY_PRT_SC ||
+         hk==KEY_UP     ||
+         hk==KEY_LEFT   ||
+         hk==KEY_RIGHT  ||
+         hk==KEY_DOWN   ||
+         hk==KEY_F1     ||
+         hk==KEY_F2     ||
+         hk==KEY_F3     ||
+         hk==KEY_F4     ||
+         hk==KEY_F5     ||
+         hk==KEY_F6     ||
+         hk==KEY_F7     ||
+         hk==KEY_F8     ||
+         hk==KEY_F9     ||
+         hk==KEY_F10    ||
+         hk==KEY_F11    ||
+         hk==KEY_F12) {
+        k &= 0xFF00;
+      } else {
+        k &= 0x00FF;
+      }
     }
   }
   return k;
@@ -53,6 +57,7 @@ uint io_getkey()
 extern uint8_t serial_status;
 void io_serial_putc(char c)
 {
+  return;
   // Check device available
   if(serial_status & 0x80) {
     return;
@@ -151,7 +156,7 @@ void io_vga_clear()
   regs.ax = (0x06 << 8) | 0x00;
   regs.bx = (AT_DEFAULT << 8);
   regs.cx = 0;
-  regs.dx = (24 << 8) | 79;
+  regs.dx = (27 << 8) | 79;
   int32(0x10, &regs);
 }
 
@@ -245,7 +250,7 @@ uint io_gettimer()
 
 // We need this buffer to be inside a 64KB bound
 // to avoid DMA error
-uint8_t disk_buff[DISK_SECTOR_SIZE];
+extern uint8_t disk_buff[DISK_SECTOR_SIZE];
 extern uint8_t system_hwdisk; // System disk hardware ID
 
 // Disk id to disk index
@@ -278,6 +283,7 @@ static uint disk_reset(uint hwdisk)
   memset(&regs, 0, sizeof(regs));
   regs.ax = 0;
   regs.dx = hwdisk;
+  __asm__("stc");
   int32(0x13, &regs);
   return (regs.eflags & X86_CF);
 }
@@ -299,6 +305,7 @@ static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
   regs.dx = hwdisk;
   regs.es = 0;
   regs.di = 0;
+  __asm__("clc");
   int32(0x13, &regs);
 
   uint result = (regs.eflags & X86_CF);
@@ -417,6 +424,7 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
     regs.dx = (chs.head << 8) | hwdisk;
     regs.es = ((uint)buff) / 0x10000;
     regs.bx = ((uint)buff) % 0x10000;
+    __asm__("stc");
     int32(0x13, &regs);
 
     result = (regs.eflags & X86_CF);
@@ -460,7 +468,7 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   if(offset) {
     result = disk_read_sector(disk, sector, 1, disk_buff);
     i = min(DISK_SECTOR_SIZE-offset, size);
-    memcpy(buff, &disk_buff[offset], i);
+    memcpy(buff, disk_buff+offset, i);
     sector++;
     size -= i;
   }
@@ -528,6 +536,7 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
     regs.dx = (chs.head << 8) | hwdisk;
     regs.es = ((uint)buff) / 0x10000;
     regs.bx = ((uint)buff) % 0x10000;
+    __asm__("stc");
     int32(0x13, &regs);
 
     result = (regs.eflags & X86_CF);
@@ -619,25 +628,52 @@ void apm_shutdown()
   regs.bx = 0;
   int32(0x15, &regs);
 
+  if(regs.eflags & X86_CF) {
+    debug_putstr("APM disconnect error (%2x)\n", (regs.ax & 0xFF00) >> 8);
+  }
+
   // Connect to real mode interface
   memset(&regs, 0, sizeof(regs));
   regs.ax = 0x5301;
   regs.bx = 0;
   int32(0x15, &regs);
 
+  if(regs.eflags & X86_CF) {
+    debug_putstr("APM connect error (%2x)\n", (regs.ax & 0xFF00) >> 8);
+  }
+
+  // Set APM version
+  memset(&regs, 0, sizeof(regs));
+  regs.ax = 0x530E;
+  regs.bx = 0;
+  regs.cx = 0x0101;
+  int32(0x15, &regs);
+
+  if(regs.eflags & X86_CF) {
+    debug_putstr("APM set version error (%2x)\n", (regs.ax & 0xFF00) >> 8);
+  }
+
   // Enable power management
   memset(&regs, 0, sizeof(regs));
-  regs.ax = 0x5308;
+  regs.ax = 0x530D;
   regs.bx = 0x0001;
   regs.cx = 0x0001;
   int32(0x15, &regs);
+
+  if(regs.eflags & X86_CF) {
+    debug_putstr("APM enable error (%2x)\n", (regs.ax & 0xFF00) >> 8);
+  }
 
   // Power off
   memset(&regs, 0, sizeof(regs));
   regs.ax = 0x5307;
   regs.bx = 0x0001;
   regs.cx = 0x0003;
-  int32(0x15, &regs);
+//  int32(0x15, &regs);
+
+  if(regs.eflags & X86_CF) {
+    debug_putstr("APM set state error (%2x)\n", (regs.ax & 0xFF00) >> 8);
+  }
 
   while(1) {
 

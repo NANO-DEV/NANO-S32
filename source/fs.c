@@ -118,21 +118,23 @@ uint fs_get_info(uint disk, FS_INFO* info)
   }
 
   // Count avaliable disks (n)
+  uint j = 0xFFFF;
   for(uint i=0; i<MAX_DISK; i++) {
     if(disk_info[i].size != 0) {
       if(n == disk) {
-        n++;
+        j = disk;
       }
+      n++;
     }
   }
 
   // Fill info
-  if(disk_info[disk].size != 0) {
-    info->id = disk;
+  if(j != 0xFFFF && disk_info[j].size != 0) {
+    info->id = j;
     strncpy(info->name, disk_to_string(info->id), sizeof(info->name));
-    info->fs_type = disk_info[disk].fstype;
-    info->fs_size = blocks_to_MB(disk_info[disk].fssize);
-    info->disk_size = disk_info[disk].size;
+    info->fs_type = disk_info[j].fstype;
+    info->fs_size = blocks_to_MB(disk_info[j].fssize);
+    info->disk_size = disk_info[j].size;
   }
 
   return n;
@@ -386,7 +388,11 @@ uint fs_read_file(void* buff, char* path, uint offset, size_t count)
     }
     result = read;
   } else {
-    result = nentry;
+    if(nentry < ERROR_ANY) {
+      result = ERROR_NOT_FOUND;
+    } else {
+      result = nentry;
+    }
   }
 
   return result;

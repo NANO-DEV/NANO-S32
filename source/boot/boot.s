@@ -25,7 +25,7 @@ start:
   mov  [BDISK_LOC], dl
 
   mov  ah, 8            ; Get disk parameters
-  int  13h
+  int  0x13
   jc   error
   and  cx, 0x3F         ; Maximum sector number
   mov  [SECTORS], cx    ; Sector numbers start at 1

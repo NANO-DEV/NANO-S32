@@ -3,9 +3,9 @@
 #ifndef _KERNEL_H
 #define _KERNEL_H
 
-#define OS_VERSION_HI 0
-#define OS_VERSION_LO 2
-#define OS_BUILD_NUM 3
+#define OS_VERSION_HI 1
+#define OS_VERSION_LO 0
+#define OS_BUILD_NUM 4
 
 // Hardware related disk information is handled by the kernel module.
 // File system related information is handled by file system module

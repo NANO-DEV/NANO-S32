@@ -57,7 +57,7 @@ k16_stack_top:
 %define DATA16                          GDTENTRY(4)	; 0x20
 
 ; int32 call makes its POSSIBLE to execute BIOS interrupts
-; by temporally switching to virtual 8086 mode
+; by temporally switching to real mode
 ;
 ; Adapted from original work by Napalm (thank you!)
 ; License: http://creativecommons.org/licenses/by-sa/2.0/uk/
@@ -67,10 +67,10 @@ k16_stack_top:
 ;
 global int32
 int32: use32
+  cli
 	pushad                                 ; save register state to 32bit stack
 	cld                                    ; clear direction flag (copy forward)
 	mov  [stack32_ptr], esp                ; save 32bit stack pointer
-	sidt [idt32_ptr]                       ; save 32bit idt pointer
 	lea  esi, [esp+0x24]                   ; set position of intnum on 32bit stack
 	lodsd                                  ; read intnum into eax
 	mov  [ib], al                          ; set interrupt immediate byte from arguments
@@ -102,9 +102,20 @@ r_mode16: use16
 	pop  es                                ; load es from 16bit stack
 	pop  ds                                ; load ds from 16bit stack
 	mov  sp, [stack32_ptr]                 ; set usable sp
+  push ax
+  mov  al, 0x00                          ; unmask PIC interrupts
+  out  0x21, al
+  out  0xA1, al
+  pop  ax
+  sti
 	db 0xCD                                ; opcode of INT instruction with immediate byte
 ib: db 0x00
-ai: use16
+  cli
+  push ax
+  mov  al, 0xFF                          ; mask PIC interrupts
+  out  0x21, al
+  out  0xA1, al
+  pop  ax
 	mov  sp, 0                             ; zero sp so it can be reused
 	mov  ss, sp                            ; set ss so the stack is valid
 	mov  sp, k16_stack_top                 ; set correct stack position to copy
@@ -114,8 +125,9 @@ ai: use16
 	push fs                                ; save fs to 16bit stack
 	push gs                                ; save gs to 16bit stack
 	pusha                                  ; save general purpose registers to 16bit stack
+  mov  sp, [stack32_ptr]                 ; set usable sp
 	mov  eax, cr0                          ; get cr0 so it can be modified
-	inc  eax                               ; set PE bit to turn on protected mode
+	or   al, 0x01                          ; set PE bit to turn on protected mode
 	mov  cr0, eax                          ; set cr0 to result
 	jmp  dword CODE32:p_mode32             ; switch to 32bit selector (32bit protected mode)
 p_mode32: use32
@@ -125,7 +137,7 @@ p_mode32: use32
 	mov  fs, ax                            ; reset fs selector
 	mov  gs, ax                            ; reset gs selector
 	mov  ss, ax                            ; reset ss selector
-	lidt [idt32_ptr]                       ; restore 32bit idt pointer
+	lidt [idtr]                            ; restore 32bit idt pointer
 	mov  esp, [stack32_ptr]                ; restore 32bit stack pointer
 	mov  esi, k16_stack                    ; set copy source to 16bit stack
 	lea  edi, [esp+0x28]                   ; set position of regs pointer on 32bit stack
@@ -134,14 +146,12 @@ p_mode32: use32
 	cld                                    ; clear direction flag (copy forward)
   rep  movsb                             ; copy (16bit stack to 32bit stack)
 	popad                                  ; restore registers
+  sti
 	ret                                    ; return to caller
+
 
 stack32_ptr:                             ; address in 32bit stack after
 	dd 0x00000000                          ; saving all general purpose registers
-
-idt32_ptr:                               ; IDT table pointer for 32bit access
-	dw 0x0000                              ; table limit (size)
-	dd 0x00000000                          ; table base address
 
 idt16_ptr:                               ; IDT table pointer for 16bit access
 	dw 0x03FF                              ; table limit (size)
@@ -150,22 +160,45 @@ idt16_ptr:                               ; IDT table pointer for 16bit access
 idtr:
   dw (50*8)-1
   dd idt
+
 idt:
   times 50*8 db 0
 
 ; Install interrupt handler
 global install_ISR
-install_ISR:
+install_ISR: use32
 	pushad
-  lidt [idtr]
+
+  ; Configure PIC
+  mov  al, 0x11                          ; 0x11 = ICW1_INIT | ICW1_ICW4
+  out  0x20, al                          ; send ICW1 to master pic
+  out  0xA0, al                          ; send ICW1 to slave pic
+  mov  al, 0x08                          ; get master pic vector param
+  out  0x21, al                          ; send ICW2 aka vector to master pic
+  mov  al, 0x70                          ; get slave pic vector param
+  out  0xA1, al                          ; send ICW2 aka vector to slave pic
+  mov  al, 0x04                          ; 0x04 = set slave to IRQ2
+  out  0x21, al                          ; send ICW3 to master pic
+  mov  al, 0x02                          ; 0x02 = tell slave its on IRQ2 of master
+  out  0xA1, al                          ; send ICW3 to slave pic
+  mov  al, 0x01                          ; 0x01 = ICW4_8086
+  out  0x21, al                          ; send ICW4 to master pic
+  out  0xA1, al                          ; send ICW4 to slave pic
+
+  mov  al, 0xFF                          ; mask all PIC interrupts
+  out  0x21, al
+  out  0xA1, al
+
+  ; Setup syscall handler
   mov eax, int_handler
   mov [idt+49*8], ax
   mov word [idt+49*8+2], CODE32
   mov word [idt+49*8+4], 0x8E00
   shr eax, 16
   mov [idt+49*8+6], ax
+  lidt [idtr]
+
 	popad
-	cli
 	ret
 
 ; Interrupt int_handler
@@ -180,8 +213,13 @@ int_handler: use32
 	pop eax
 	popad
 	mov eax, [.result]
-	iret
+	iretd
 
 .result dd 0                            ; Result of ISR
+
+ALIGN 2
+global disk_buff
+disk_buff:
+  times 512 db 0
 
 extern kernel_service

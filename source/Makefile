@@ -23,7 +23,7 @@ $(BOOTDIR)boot.bin: $(BOOTDIR)boot.s
 	$(NASM) -O0 -w+orphan-labels -f bin -o $@ $(BOOTDIR)boot.s
 
 kernel.n32: load.o kernel.o hwio.o fs.o x86.o $(ULIBDIR)ulib.o
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0x8000 -o $@ load.o x86.o kernel.o hwio.o fs.o $(ULIBDIR)ulib.o
+	$(LD) $(LDFLAGS) -M -N -e start -Ttext 0x8000 -o $@ load.o x86.o kernel.o hwio.o fs.o $(ULIBDIR)ulib.o
 
 load.o: load.S
 	$(CC) $(CFLAGS) -o $@ -c load.S

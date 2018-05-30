@@ -50,36 +50,31 @@ start:
   movw    %ax,%es              # -> Extra Segment
   movw    %ax,%ss              # -> Stack Segment
 
-  movb    %dl, system_hwdisk  # save boot disk as system disk
+  movb    %dl,system_hwdisk    # save boot disk as system disk
 
   # Init serial port
-  movw    $0, %dx
-  movb    $0, %ah
-  movb    $0b10101011, %al     # 2400 baud, 8 data bits, odd parity, 1 stop bit
+  movw    $0,%dx
+  movb    $0,%ah
+  movb    $0b10101011,%al      # 2400 baud, 8 data bits, odd parity, 1 stop bit
   int     $0x14
-  movb    %ah, serial_status
+  movb    %ah,serial_status
 
-  # Enable physical address line A20
-seta20.1:
-  inb     $0x64,%al            # Wait for not busy
-  testb   $0x2,%al
-  jnz     seta20.1
+  movw    $0x1111,%ax          # Set font
+  movb    $0, %bl
+  int     $0x10
 
-  movb    $0xd1,%al            # 0xd1 -> port 0x64
-  outb    %al,$0x64
+  # Enable A20 line
+  movw    $0x2401,%ax          # A20-Gate Activate by BIOS
+  int     $0x15
 
-seta20.2:
-  inb     $0x64,%al            # Wait for not busy
-  testb   $0x2,%al
-  jnz     seta20.2
-
-  movb    $0xdf,%al            # 0xdf -> port 0x60
-  outb    %al,$0x60
+;  movb $0xFF,%al
+;  outb %al,$0xA1
+;  outb %al,$0x21
 
   # Switch from real to protected mode.  Use a flat GDT that makes
   # virtual addresses map directly to physical addresses so that the
   # effective memory map doesn't change during the transition
-  lgdt    gdtdesc  # gdt16_ptr
+  lgdt    gdtdesc
   movl    %cr0, %eax
   orl     $CR0_PE, %eax
   movl    %eax, %cr0
@@ -101,7 +96,6 @@ start32:
   movw    %ax, %gs             # -> GS
 
   # Set up the stack pointer and call C function
-  cld
   movl    $start, %esp
   call    kernel
 
