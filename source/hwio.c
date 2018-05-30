@@ -669,7 +669,7 @@ void apm_shutdown()
   regs.ax = 0x5307;
   regs.bx = 0x0001;
   regs.cx = 0x0003;
-//  int32(0x15, &regs);
+  int32(0x15, &regs);
 
   if(regs.eflags & X86_CF) {
     debug_putstr("APM set state error (%2x)\n", (regs.ax & 0xFF00) >> 8);
