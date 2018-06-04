@@ -75,6 +75,10 @@ void io_serial_putc(char c)
 }
 
 #define AT_DEFAULT (AT_T_LGRAY|AT_B_BLACK)
+static const uint VGA_PORT = 0x03D4;
+static const size_t VGA_WIDTH = 80;
+static const size_t VGA_HEIGHT = 28;
+static uint16_t* const VGA_MEMORY = (uint16_t*) 0xB8000;
 
 // Put char (screen)
 void io_vga_putc(char c, uint8_t attr)
@@ -89,29 +93,39 @@ void io_vga_putc(char c, uint8_t attr)
     c = ' ';
   }
 
-  // Set attribute
-	regs16_t regs;
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x09 << 8);
-  regs.bx = attr;
-  regs.cx = 1;
-  int32(0x10, &regs);
+  // Get cursor position: col + width*row
+  uint pos = 0;
+  outb(VGA_PORT, 14);
+  pos = inb(VGA_PORT+1) << 8;
+  outb(VGA_PORT, 15);
+  pos |= inb(VGA_PORT+1);
 
-  // Teletype output char)
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x0E << 8) | c;
-  regs.bx = 0;
-  int32(0x10, &regs);
+  // Set char
+  if(c == '\n') {
+    pos += VGA_WIDTH - pos%VGA_WIDTH;
+  } else {
+    VGA_MEMORY[pos++] = (c & 0xFF) | (attr << 8);
+  }
 
-  // Add \r after \n
-	if(c=='\n')	{
-    memset(&regs, 0, sizeof(regs));
-		regs.ax = (0x0E << 8) | '\r';
-    regs.bx = 0;
-		int32(0x10, &regs);
-	}
+  // Scroll
+  if((pos/VGA_WIDTH) > (VGA_HEIGHT-1)) {
 
-	return;
+    memcpy(VGA_MEMORY, VGA_MEMORY+VGA_WIDTH,
+      sizeof(VGA_MEMORY[0])*(VGA_HEIGHT-1)*VGA_WIDTH);
+
+    pos -= VGA_WIDTH;
+
+    const uint16_t empty = ' '|(AT_DEFAULT<<8);
+    for(uint i = pos; i<VGA_HEIGHT*VGA_WIDTH; i++) {
+      VGA_MEMORY[i] = empty;
+    }
+  }
+
+  // Set cursor position
+  outb(VGA_PORT, 14);
+  outb(VGA_PORT+1, pos>>8);
+  outb(VGA_PORT, 15);
+  outb(VGA_PORT+1, pos);
 }
 
 // Write a char to screen in specific position
@@ -127,16 +141,8 @@ void io_vga_putc_attr(uint x, uint y, char c, uint8_t attr)
     c = ' ';
   }
 
-  // Set cursor
-  io_vga_setcursorpos(x, y);
-
-  // Draw char with attribute
-	regs16_t regs;
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x09 << 8) | c;
-  regs.bx = attr;
-  regs.cx = 1;
-  int32(0x10, &regs);
+  const uint pos = VGA_WIDTH*y + x;
+  VGA_MEMORY[pos] = (c & 0xFF) | (attr << 8);
 
 	return;
 }
@@ -144,57 +150,52 @@ void io_vga_putc_attr(uint x, uint y, char c, uint8_t attr)
 // Clear screen
 void io_vga_clear()
 {
-  regs16_t regs;
+  const uint16_t empty = ' '|(AT_DEFAULT<<8);
+  for(uint x=0; x<VGA_WIDTH; x++) {
+    for(uint y=0; y<VGA_HEIGHT; y++) {
+      VGA_MEMORY[VGA_WIDTH*y+x] = empty;
+    }
+  }
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x02 << 8);
-  regs.bx = 0;
-  regs.dx = 0;
-  int32(0x10, &regs);
-
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x06 << 8) | 0x00;
-  regs.bx = (AT_DEFAULT << 8);
-  regs.cx = 0;
-  regs.dx = (27 << 8) | 79;
-  int32(0x10, &regs);
+  io_vga_setcursorpos(0, 0);
 }
 
 // Get screen cursor position
 void io_vga_getcursorpos(uint* x, uint* y)
 {
-  regs16_t regs;
+  uint pos = 0;
+  outb(VGA_PORT, 14);
+  pos = inb(VGA_PORT+1) << 8;
+  outb(VGA_PORT, 15);
+  pos |= inb(VGA_PORT+1);
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x03 << 8);
-  regs.bx = 0;
-  int32(0x10, &regs);
-
-  *x = (regs.dx & 0xFF);
-  *y = ((regs.dx & 0xFF00) >> 8);
+  *x = pos % VGA_WIDTH;
+  *y = pos / VGA_WIDTH;
 }
 
 // Set screen cursor position
 void io_vga_setcursorpos(uint x, uint y)
 {
-  regs16_t regs;
-
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x02 << 8);
-  regs.bx = 0;
-  regs.dx = ((y & 0xFF) << 8) | (x & 0xFF);
-  int32(0x10, &regs);
+  uint pos = VGA_WIDTH*y + x;
+  outb(VGA_PORT, 14);
+  outb(VGA_PORT+1, pos>>8);
+  outb(VGA_PORT, 15);
+  outb(VGA_PORT+1, pos);
 }
 
 // Show or hide screen cursor
 void io_vga_showcursor(uint show)
 {
-  regs16_t regs;
+  if(!show) {
+    outb(VGA_PORT, 0x0A);
+	  outb(VGA_PORT+1, 0x20);
+  } else {
+    outb(VGA_PORT, 0x0A);
+	  outb(VGA_PORT+1, (inb(VGA_PORT+1) & 0xC0) | 0xC);
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x01 << 8) | 0x03;
-  regs.cx = show ? 0x0607 : 0x2000;
-  int32(0x10, &regs);
+  	outb(VGA_PORT, 0x0B);
+  	outb(VGA_PORT+1, (inb(VGA_PORT+8) & 0xE0) | 0xE);
+  }
 }
 
 
