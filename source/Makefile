@@ -31,10 +31,10 @@ load.o: load.S
 kernel.o: kernel.c kernel.h types.h hwio.h syscall.h $(ULIBDIR)ulib.h x86.h fs.h
 	$(CC) $(CFLAGS) -o $@ -c kernel.c
 
-hwio.o: hwio.c x86.h types.h $(ULIBDIR)ulib.h
+hwio.o: kernel.h hwio.c x86.h types.h $(ULIBDIR)ulib.h
 	$(CC) $(CFLAGS) -o $@ -c hwio.c
 
-fs.o: fs.c fs.h x86.h types.h hwio.h $(ULIBDIR)ulib.h
+fs.o: fs.c kernel.h fs.h types.h hwio.h $(ULIBDIR)ulib.h
 	$(CC) $(CFLAGS) -o $@ -c fs.c
 
 $(ULIBDIR)ulib.o: $(ULIBDIR)ulib.c $(ULIBDIR)ulib.h syscall.h types.h

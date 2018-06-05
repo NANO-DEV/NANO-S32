@@ -16,7 +16,7 @@
 
 # The 0xC0 means the limit is in 4096-byte units
 # and (for executable segments) 32-bit mode
-#define SEG_ASM(bits,type,base,lim)                                  \
+#define SEG_ASM(bits,type,base,lim)                             \
         .word (((lim) >> 12) & 0xffff), ((base) & 0xffff);      \
         .byte (((base) >> 16) & 0xff), (0x90 | (type)),         \
               (bits | (((lim) >> 28) & 0xf)), (((base) >> 24) & 0xff)
@@ -40,7 +40,7 @@
 # Loader starts here
 
 .code16                        # Assemble for 16-bit mode
-.globl start, system_hwdisk, serial_status
+.globl start, system_hwdisk
 start:
   cli                         # BIOS enabled interrupts; disable
 
@@ -51,13 +51,6 @@ start:
   movw    %ax,%ss              # -> Stack Segment
 
   movb    %dl,system_hwdisk    # save boot disk as system disk
-
-  # Init serial port
-  movw    $0,%dx
-  movb    $0,%ah
-  movb    $0b10101011,%al      # 2400 baud, 8 data bits, odd parity, 1 stop bit
-  int     $0x14
-  movb    %ah,serial_status
 
   movw    $0x1111,%ax          # Set font
   movb    $0, %bl
@@ -104,8 +97,6 @@ spin:
   jmp     spin
 
 system_hwdisk:
-  .byte 0
-serial_status:
   .byte 0
 
 # Bootstrap GDT

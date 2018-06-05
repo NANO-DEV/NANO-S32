@@ -54,24 +54,36 @@ uint io_getkey()
 }
 
 // Put char (serial port)
-extern uint8_t serial_status;
+static uint8_t serial_status = 0xFF;
+#define COM1_PORT 0x03F8
 void io_serial_putc(char c)
 {
-  return;
-  // Check device available
-  if(serial_status & 0x80) {
-    return;
+  if(serial_status == 0xFF) {
+    // Init serial
+    outb(COM1_PORT + 1, 0x00);    // Disable all interrupts
+    outb(COM1_PORT + 3, 0x80);    // Enable DLAB (set baud rate divisor)
+    outb(COM1_PORT + 0, 0x03);    // Set divisor to 3 (lo byte) 38400 baud
+    outb(COM1_PORT + 1, 0x00);    //                  (hi byte)
+    outb(COM1_PORT + 3, 0x03);    // 8 bits, no parity, one stop bit
+    outb(COM1_PORT + 2, 0xC7);    // Enable FIFO, clear them, with 14-byte threshold
+    outb(COM1_PORT + 4, 0x0B);    // IRQs enabled, RTS/DSR set
+    serial_status = 1;
+
+    // If status is 0xFF, no serial port
+    if(inb(COM1_PORT+5) == 0xFF) {
+      serial_status = 0;
+    }
+
+    debug_putstr("Serial port initialized\n");
   }
 
-  regs16_t regs;
-
-  memset(&regs, 0, sizeof(regs));
-  regs.dx = 0;
-  regs.ax = (0x01 << 8) | c;
-  int32(0x14, &regs);
-  serial_status = (regs.ax & 0xFF00) >> 8;
-
-  return;
+  // If serial port is active, put char
+  if(serial_status == 1) {
+    // Wait
+    for(uint i=0; i<128 && !(inb(COM1_PORT+5) & 0x20); i++ ) {
+    }
+    outb(COM1_PORT, c);
+  }
 }
 
 #define AT_DEFAULT (AT_T_LGRAY|AT_B_BLACK)

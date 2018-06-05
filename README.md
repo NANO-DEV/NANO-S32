@@ -82,12 +82,12 @@ The building process is expected to be executed in a Linux system. In Windows 10
 git clone https://github.com/NANO-DEV/NANO-S32.git
 ```
 The tree contains the following directories:
-    * fstools: disk image generation tool
-    * images: output folder for generated disk images
-    * source: source code
-        * boot: code for the boot sector image
-        * ulib: library to develop user programs
-        * programs: user programs
+  * fstools: disk image generation tool
+  * images: output folder for generated disk images
+  * source: source code
+      * boot: code for the boot sector image
+      * ulib: library to develop user programs
+      * programs: user programs
 
 3. Build: Customize `Makefile` and `source/Makefile` files. Run `make` from the root directory to build everything. Images will be generated in the `images` directory.
 
