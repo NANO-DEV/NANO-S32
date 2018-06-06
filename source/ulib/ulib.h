@@ -63,35 +63,35 @@ void set_show_cursor(uint show);
 // if(k == KEY_DEL) ...
 // if(k == 'a') ...
 
-#define KEY_BACKSPACE 0x0008
-#define KEY_RETURN    0x000D
-#define KEY_ESC       0x001B
-#define KEY_DEL       0x5300
-#define KEY_END       0x4F00
-#define KEY_HOME      0x4700
-#define KEY_INS       0x5200
-#define KEY_PG_DN     0x5100
-#define KEY_PG_UP     0x4900
-#define KEY_PRT_SC    0x7200
-#define KEY_TAB       0x0009
+#define KEY_BACKSPACE 0x08
+#define KEY_RETURN    0x0D
+#define KEY_ESC       0x1B
+#define KEY_DEL       0xE0
+#define KEY_END       0xE1
+#define KEY_HOME      0xE2
+#define KEY_INS       0xE3
+#define KEY_PG_DN     0xE4
+#define KEY_PG_UP     0xE5
+#define KEY_PRT_SC    0xE6
+#define KEY_TAB       0x09
 
-#define KEY_UP        0x4800
-#define KEY_LEFT      0x4B00
-#define KEY_RIGHT     0x4D00
-#define KEY_DOWN      0x5000
+#define KEY_UP        0xE7
+#define KEY_LEFT      0xE8
+#define KEY_RIGHT     0xE9
+#define KEY_DOWN      0xEA
 
-#define KEY_F1        0x3B00
-#define KEY_F2        0x3C00
-#define KEY_F3        0x3D00
-#define KEY_F4        0x3E00
-#define KEY_F5        0x3F00
-#define KEY_F6        0x4000
-#define KEY_F7        0x4100
-#define KEY_F8        0x4200
-#define KEY_F9        0x4300
-#define KEY_F10       0x4400
-#define KEY_F11       0x8500
-#define KEY_F12       0x8600
+#define KEY_F1        0xF1
+#define KEY_F2        0xF2
+#define KEY_F3        0xF3
+#define KEY_F4        0xF4
+#define KEY_F5        0xF5
+#define KEY_F6        0xF6
+#define KEY_F7        0xF7
+#define KEY_F8        0xF8
+#define KEY_F9        0xF9
+#define KEY_F10       0xFA
+#define KEY_F11       0xFB
+#define KEY_F12       0xFC
 
 uint getkey();
 int getstr(char* str, size_t n);

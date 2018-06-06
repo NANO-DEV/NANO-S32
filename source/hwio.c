@@ -6,50 +6,174 @@
 #include "ulib/ulib.h"
 #include "kernel.h"
 
-// Wait and get key
-uint io_getkey()
+
+// PC keyboard interface constants
+
+#define KB_PORT_STATUS  0x64    // kbd controller status port(I)
+#define KB_PORT_DATA    0x60    // kbd data port(I)
+#define KB_DATA_IN_BUFF 0x01    // kbd data in buffer
+
+#define NO              0
+
+#define SHIFT           (1<<0)
+#define CTL             (1<<1)
+#define ALT             (1<<2)
+
+#define CAPSLOCK        (1<<3)
+#define NUMLOCK         (1<<4)
+#define SCROLLLOCK      (1<<5)
+
+#define E0ESC           (1<<6)
+
+// C('A') == Control-A
+#define C(x) (x - '@')
+
+static const uint8_t shiftcode[256] =
 {
-  regs16_t regs;
-  uint k = 0;
+  [0x1D] CTL,
+  [0x2A] SHIFT,
+  [0x36] SHIFT,
+  [0x38] ALT,
+  [0x9D] CTL,
+  [0xB8] ALT
+};
 
-  while(k==0) {
+static const uint8_t togglecode[256] =
+{
+  [0x3A] CAPSLOCK,
+  [0x45] NUMLOCK,
+  [0x46] SCROLLLOCK
+};
 
-    memset(&regs, 0, sizeof(regs));
-    regs.ax = (0x00 << 8);
-    int32(0x16, &regs);
+// Keyboard maps
+static const uint8_t normalmap[256] =
+{
+  NO,   KEY_ESC, '1',  '2',  '3',  '4',  '5',  '6',  // 0x00
+  '7',  '8',  '9',  '0',  '-',  '=',  KEY_BACKSPACE, KEY_TAB,
+  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',  // 0x10
+  'o',  'p',  '[',  ']',  KEY_RETURN, NO,   'a',  's',
+  'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';',  // 0x20
+  '\'', '`',  NO,   '\\', 'z',  'x',  'c',  'v',
+  'b',  'n',  'm',  ',',  '.',  '/',  NO,   '*',  // 0x30
+  NO,   ' ',  NO, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5,
+  KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10,   NO,   NO,   '7',  // 0x40
+  '8',  '9',  '-',  '4',  '5',  '6',  '+',  '1',
+  '2',  '3',  '0',  '.',  NO,   NO,   NO,   KEY_F11,   // 0x50
+  KEY_F12,
+  [0x9C] KEY_RETURN,// KP_Enter
+  [0xB5] '/',       // KP_Div
+  [0xC8] KEY_UP,    [0xD0] KEY_DOWN,
+  [0xC9] KEY_PG_UP, [0xD1] KEY_PG_DN,
+  [0xCB] KEY_LEFT,  [0xCD] KEY_RIGHT,
+  [0x97] KEY_HOME,  [0xCF] KEY_END,
+  [0xD2] KEY_INS,   [0xD3] KEY_DEL
+};
 
-    k = regs.ax;
-    const uint hk = (k & 0xFF00);
-    if(k != 0) {
-      if(hk==KEY_DEL    ||
-         hk==KEY_END    ||
-         hk==KEY_HOME   ||
-         hk==KEY_INS    ||
-         hk==KEY_PG_DN  ||
-         hk==KEY_PG_UP  ||
-         hk==KEY_PRT_SC ||
-         hk==KEY_UP     ||
-         hk==KEY_LEFT   ||
-         hk==KEY_RIGHT  ||
-         hk==KEY_DOWN   ||
-         hk==KEY_F1     ||
-         hk==KEY_F2     ||
-         hk==KEY_F3     ||
-         hk==KEY_F4     ||
-         hk==KEY_F5     ||
-         hk==KEY_F6     ||
-         hk==KEY_F7     ||
-         hk==KEY_F8     ||
-         hk==KEY_F9     ||
-         hk==KEY_F10    ||
-         hk==KEY_F11    ||
-         hk==KEY_F12) {
-        k &= 0xFF00;
-      } else {
-        k &= 0x00FF;
-      }
+static const uint8_t shiftmap[256] =
+{
+  NO,   033,  '!',  '@',  '#',  '$',  '%',  '^',  // 0x00
+  '&',  '*',  '(',  ')',  '_',  '+',  KEY_BACKSPACE, KEY_TAB,
+  'Q',  'W',  'E',  'R',  'T',  'Y',  'U',  'I',  // 0x10
+  'O',  'P',  '{',  '}',  KEY_RETURN, NO,   'A',  'S',
+  'D',  'F',  'G',  'H',  'J',  'K',  'L',  ':',  // 0x20
+  '"',  '~',  NO,   '|',  'Z',  'X',  'C',  'V',
+  'B',  'N',  'M',  '<',  '>',  '?',  NO,   '*',  // 0x30
+  NO,   ' ',  NO,   NO,   NO,   NO,   NO,   NO,
+  NO,   NO,   NO,   NO,   NO,   NO,   NO,   '7',  // 0x40
+  '8',  '9',  '-',  '4',  '5',  '6',  '+',  '1',
+  '2',  '3',  '0',  '.',  NO,   NO,   NO,   NO,   // 0x50
+  [0x9C] KEY_RETURN, // KP_Enter
+  [0xB5] '/',        // KP_Div
+  [0xC8] KEY_UP,     [0xD0] KEY_DOWN,
+  [0xC9] KEY_PG_UP,  [0xD1] KEY_PG_DN,
+  [0xCB] KEY_LEFT,   [0xCD] KEY_RIGHT,
+  [0x97] KEY_HOME,   [0xCF] KEY_END,
+  [0xD2] KEY_INS,    [0xD3] KEY_DEL
+};
+
+static const uint8_t ctlmap[256] =
+{
+  NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+  NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
+  C('Q'),  C('W'),  C('E'),  C('R'),  C('T'),  C('Y'),  C('U'),  C('I'),
+  C('O'),  C('P'),  NO,      NO,      KEY_RETURN, NO,   C('A'),  C('S'),
+  C('D'),  C('F'),  C('G'),  C('H'),  C('J'),  C('K'),  C('L'),  NO,
+  NO,      NO,      NO,      C('\\'), C('Z'),  C('X'),  C('C'),  C('V'),
+  C('B'),  C('N'),  C('M'),  NO,      NO,      C('/'),  NO,      NO,
+  [0x9C] KEY_RETURN, // KP_Enter
+  [0xB5] C('/'),     // KP_Div
+  [0xC8] KEY_UP,     [0xD0] KEY_DOWN,
+  [0xC9] KEY_PG_UP,  [0xD1] KEY_PG_DN,
+  [0xCB] KEY_LEFT,   [0xCD] KEY_RIGHT,
+  [0x97] KEY_HOME,   [0xCF] KEY_END,
+  [0xD2] KEY_INS,    [0xD3] KEY_DEL
+};
+
+// Function to read keyboard
+// Convert chars to ascii
+// Special key codes also used
+// Returns 0 if no key pressed
+static uint8_t kb_get()
+{
+  static uint shift = NUMLOCK;
+  static const uint8_t* charcode[4] = {
+    normalmap, shiftmap, ctlmap, ctlmap
+  };
+  uint8_t st, data, c;
+
+  // Check if there is data available
+  st = inb(KB_PORT_STATUS);
+  if((st & KB_DATA_IN_BUFF) == 0) {
+    return 0;
+  }
+
+  // Read data
+  data = inb(KB_PORT_DATA);
+
+  // Escape code. Return and skip next key
+  if(data == 0xE0) {
+    shift |= E0ESC;
+    return 0;
+
+  } else if(data & 0x80) {
+    // Key released
+    data = (shift & E0ESC ? data : data & 0x7F);
+    shift &= ~(shiftcode[data] | E0ESC);
+    return 0;
+
+  } else if(shift & E0ESC) {
+    // Last character was an E0 escape; or with 0x80
+    data |= 0x80;
+    shift &= ~E0ESC;
+  }
+
+  // Find key in map and translate
+  shift |= shiftcode[data];
+  shift ^= togglecode[data];
+  c = charcode[shift & (CTL | SHIFT)][data];
+
+  // Handle CAPSLOCK enabled
+  if(shift & CAPSLOCK) {
+    if('a' <= c && c <= 'z') {
+      c += 'A' - 'a';
+    } else if('A' <= c && c <= 'Z') {
+      c += 'a' - 'A';
     }
   }
+
+  return c;
+}
+
+// Wait until get key
+uint io_getkey()
+{
+  uint k = 0;
+
+  // Wait
+  while(k == 0) {
+    k = kb_get();
+  }
+
   return k;
 }
 
