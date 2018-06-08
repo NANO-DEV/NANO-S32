@@ -50,15 +50,15 @@ static const uint8_t normalmap[256] =
 {
   NO,   KEY_ESC, '1',  '2',  '3',  '4',  '5',  '6',  // 0x00
   '7',  '8',  '9',  '0',  '-',  '=',  KEY_BACKSPACE, KEY_TAB,
-  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',  // 0x10
+  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',     // 0x10
   'o',  'p',  '[',  ']',  KEY_RETURN, NO,   'a',  's',
-  'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';',  // 0x20
+  'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';',     // 0x20
   '\'', '`',  NO,   '\\', 'z',  'x',  'c',  'v',
-  'b',  'n',  'm',  ',',  '.',  '/',  NO,   '*',  // 0x30
+  'b',  'n',  'm',  ',',  '.',  '/',  NO,   '*',     // 0x30
   NO,   ' ',  NO, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5,
-  KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10,   NO,   NO,   '7',  // 0x40
+  KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10,  NO,   NO,   '7',
   '8',  '9',  '-',  '4',  '5',  '6',  '+',  '1',
-  '2',  '3',  '0',  '.',  NO,   NO,   NO,   KEY_F11,   // 0x50
+  '2',  '3',  '0',  '.',  NO,   NO,   NO,   KEY_F11, // 0x50
   KEY_F12,
   [0x9C] KEY_RETURN,// KP_Enter
   [0xB5] '/',       // KP_Div
@@ -129,6 +129,11 @@ static uint8_t kb_get()
 
   // Read data
   data = inb(KB_PORT_DATA);
+
+  // Skip mouse data
+  if(st & 0x20) {
+    return 0;
+  }
 
   // Escape code. Return and skip next key
   if(data == 0xE0) {
@@ -336,54 +341,218 @@ void io_vga_showcursor(uint show)
 
 
 // Time related functions
+// Convert BCD to uint
 static uint BCD_to_int(char BCD)
 {
     uint h = (BCD >> 4) * 10;
     return h + (BCD & 0xF);
 }
 
+// Read CMOS register
+static uint8_t read_CMOS(uint8_t reg)
+{
+  outb(0x70, reg);
+  return inb(0x71);
+}
+
+#define CMOS_UIP (1 << 7) // RTC update in progress
 // Get system time
 void io_getdatetime(time_t* t)
 {
-  regs16_t regs;
+  // Use the RTC
+  while(1) {
+    while(read_CMOS(0x0A) & CMOS_UIP);
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x02 << 8);
-  int32(0x1A, &regs);
-  t->hour   = BCD_to_int((regs.cx & 0xFF00) >> 8);
-  t->minute = BCD_to_int(regs.cx & 0xFF);
-  t->second = BCD_to_int((regs.dx & 0xFF00) >> 8);
+    t->year   = read_CMOS(0x09);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
+    t->month  = read_CMOS(0x08);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
+    t->day    = read_CMOS(0x07);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
+    t->hour   = read_CMOS(0x04);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
+    t->minute = read_CMOS(0x02);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
+    t->second = read_CMOS(0x00);
+    if(read_CMOS(0x0A) & CMOS_UIP) continue;
 
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x04 << 8);
-  int32(0x1A, &regs);
-  t->year   = BCD_to_int(regs.cx & 0xFF) + 2000;
-  t->month  = BCD_to_int((regs.dx & 0xFF00) >> 8);
-  t->day    = BCD_to_int(regs.dx & 0xFF);
+    break;
+  }
+
+  const uint8_t status_b = read_CMOS(0x0B);
+
+  // Convert from BCD if needed
+  if(!(status_b & 0x04)) {
+    t->year   = BCD_to_int(t->year);
+    t->month  = BCD_to_int(t->month);
+    t->day    = BCD_to_int(t->day);
+    t->hour   = BCD_to_int(t->hour);
+    t->minute = BCD_to_int(t->minute);
+    t->second = BCD_to_int(t->second);
+  }
+
+  // Convert to 24 hour format if needed
+  if(!(status_b & 0x02) && (t->hour & 0x80)) {
+    t->hour = ((t->hour & 0x7F) + 12) % 24;
+  }
+
+  // Compute actual year
+  t->year += 2000;
+}
+
+// Get current second (raw unknown format)
+static uint get_currentsecond()
+{
+  while(read_CMOS(0x0A) & CMOS_UIP);
+  return read_CMOS(0x00);
+}
+
+
+// APIC related
+#define IA32_APIC_BASE_MSR 0x1B
+
+// Local APIC registers, divided by 4 for use as uint[] indices
+#define ID      (0x0020/4)   // ID
+#define VER     (0x0030/4)   // Version
+#define TPR     (0x0080/4)   // Task Priority
+#define EOI     (0x00B0/4)   // EOI
+#define SVR     (0x00F0/4)   // Spurious Interrupt Vector
+  #define ENABLE     0x00000100   // Unit Enable
+#define ESR     (0x0280/4)   // Error Status
+#define ICRLO   (0x0300/4)   // Interrupt Command
+  #define INIT       0x00000500   // INIT/RESET
+  #define STARTUP    0x00000600   // Startup IPI
+  #define DELIVS     0x00001000   // Delivery status
+  #define ASSERT     0x00004000   // Assert interrupt (vs deassert)
+  #define DEASSERT   0x00000000
+  #define LEVEL      0x00008000   // Level triggered
+  #define BCAST      0x00080000   // Send to all APICs, including self.
+  #define BUSY       0x00001000
+  #define FIXED      0x00000000
+#define ICRHI   (0x0310/4)   // Interrupt Command [63:32]
+#define TIMER   (0x0320/4)   // Local Vector Table 0 (TIMER)
+  #define X1         0x0000000B   // divide counts by 1
+  #define PERIODIC   0x00020000   // Periodic
+#define PCINT   (0x0340/4)   // Performance Counter LVT
+#define LINT0   (0x0350/4)   // Local Vector Table 1 (LINT0)
+#define LINT1   (0x0360/4)   // Local Vector Table 2 (LINT1)
+#define ERROR   (0x0370/4)   // Local Vector Table 3 (ERROR)
+  #define MASKED     0x00010000   // Interrupt masked
+#define TICR    (0x0380/4)   // Timer Initial Count
+#define TCCR    (0x0390/4)   // Timer Current Count
+#define TDCR    (0x03E0/4)   // Timer Divide Configuration
+
+// IRQs
+#define T_IRQ0          32      // IRQ 0 corresponds to int T_IRQ
+
+#define IRQ_TIMER        0
+#define IRQ_SPURIOUS    31
+
+static volatile uint32_t* lapic;
+static void lapicw(uint index, uint value)
+{
+  lapic[index] = value;
+  lapic[ID];  // wait for write to finish, by reading
+}
+
+// Miliseconds timer related
+static volatile uint clock_ints = 0xFFFFFFFF;
+static volatile uint ints_per_second = 5000000;
+
+// Initialize lapic
+void lapic_init()
+{
+  __asm__ volatile("cli");
+
+  uint32_t eax, edx;
+  read_MSR(IA32_APIC_BASE_MSR, &eax, &edx);
+
+  lapic = (void*)(eax & 0xFFFFF000);
+  debug_putstr("LAPIC base=%x\n", lapic);
+
+  // Enable local APIC; set spurious interrupt vector
+  lapicw(SVR, ENABLE | (T_IRQ0 + IRQ_SPURIOUS));
+
+  // The timer repeatedly counts down at bus frequency
+  // from lapic[TICR] and then issues an interrupt
+  lapicw(TDCR, X1);
+  lapicw(TIMER, PERIODIC | (T_IRQ0 + IRQ_TIMER));
+  lapicw(TICR, ints_per_second);
+
+  // Clear error status register (requires back-to-back writes)
+  lapicw(ESR, 0);
+  lapicw(ESR, 0);
+
+  // Ack any outstanding interrupts
+  lapicw(EOI, 0);
+
+  // Send an Init Level De-Assert to synchronise arbitration ID's
+  lapicw(ICRHI, 0);
+  lapicw(ICRLO, INIT | LEVEL);
+  while(lapic[ICRLO] & DELIVS);
+
+  // Enable interrupts on the APIC
+  lapicw(TPR, 0x0);
+
+  __asm__ volatile("sti");
+}
+
+// Inhibit LAPIC interrupts
+void lapic_inhibit()
+{
+    lapicw(TPR, 0x20);
+}
+
+// Deinhibit LAPIC interrupts
+void lapic_deinhibit()
+{
+    lapicw(TPR, 0x00);
+}
+
+// Spurious handler
+void spurious_handler()
+{
+  // Acknowledge
+  lapicw(EOI, 0);
+}
+
+// Timer handler
+void timer_handler()
+{
+  clock_ints++;
+
+  // Set frequency
+  static uint32_t s0 = 0xFFFF;
+  static uint32_t s1 = 0xFFFE;
+  static uint32_t s2 = 0xFFFD;
+
+  if(s0 == 0xFFFF) {
+    s0 = get_currentsecond();
+    s1 = s0;
+  } else if(s1 == s0) {
+    s1 = get_currentsecond();
+    if(s1 != s0) {
+      s2 = s1;
+      clock_ints = 0;
+    }
+  } else if(s2 == s1) {
+    s2 = get_currentsecond();
+    if(s2 != s1) {
+      lapicw(TICR, (clock_ints * ints_per_second) / 100);
+      ints_per_second = 100;
+      debug_putstr("Timer adjusted to %u interrupts per second\n", ints_per_second);
+    }
+  }
+
+  // Acknowledge
+  lapicw(EOI, 0);
 }
 
 // Get system miliseconds
-static uint base_ticks = 0xFFFFFFFF;
 uint io_gettimer()
 {
-  // Get system timer ticks
-  regs16_t regs;
-  memset(&regs, 0, sizeof(regs));
-  regs.ax = (0x00 << 8);
-  int32(0x1A, &regs);
-
-  uint ticks = regs.cx * 0x10 + regs.dx +
-    (regs.ax & 0xFF) * 0x1800B0;
-
-  // Initialize reference
-  if(ticks < base_ticks) {
-    base_ticks = ticks;
-  }
-
-  ticks -= base_ticks;
-  return (ticks * 1000) / 182;
+  return ((clock_ints * 1000) / ints_per_second);
 }
-
 
 // We need this buffer to be inside a 64KB bound
 // to avoid DMA error

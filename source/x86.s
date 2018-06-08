@@ -65,10 +65,14 @@ k16_stack_top:
 ; Notes: int32() resets all selectors
 ;	void _cdelc int32(uint8_t intnum, regs16_t* regs);
 ;
+
+extern lapic_inhibit, lapic_deinhibit
+
 global int32
 int32: use32
   cli
 	pushad                                 ; save register state to 32bit stack
+  call lapic_inhibit                     ; inhibit LAPIC interrupts
 	cld                                    ; clear direction flag (copy forward)
 	mov  [stack32_ptr], esp                ; save 32bit stack pointer
 	lea  esi, [esp+0x24]                   ; set position of intnum on 32bit stack
@@ -145,6 +149,7 @@ p_mode32: use32
 	mov  ecx, regs16_t_size                ; set copy size to struct size
 	cld                                    ; clear direction flag (copy forward)
   rep  movsb                             ; copy (16bit stack to 32bit stack)
+  call lapic_deinhibit                   ; dehinibit LAPIC interrupts
 	popad                                  ; restore registers
   sti
 	ret                                    ; return to caller
@@ -158,11 +163,29 @@ idt16_ptr:                               ; IDT table pointer for 16bit access
 	dd 0x00000000                          ; table base address
 
 idtr:
-  dw (50*8)-1
+  dw (64*8)-1
   dd idt
 
 idt:
-  times 50*8 db 0
+  times 64*8 db 0
+
+
+; IRQ handler wrappers
+extern timer_handler
+IRQ0_wrapper:
+  pushad
+  cld
+  call timer_handler
+  popad
+  iret
+
+extern spurious_handler
+IRQ31_wrapper:
+  pushad
+  cld
+  call spurious_handler
+  popad
+  iret
 
 ; Install interrupt handler
 global install_ISR
@@ -185,17 +208,37 @@ install_ISR: use32
   out  0x21, al                          ; send ICW4 to master pic
   out  0xA1, al                          ; send ICW4 to slave pic
 
-  mov  al, 0xFF                          ; mask all PIC interrupts
+  mov  al, 0xFF                          ; mask PIC interrupts
   out  0x21, al
   out  0xA1, al
 
-  ; Setup syscall handler
+  ; Setup IDT
+
+  ; Syscall
   mov eax, int_handler
   mov [idt+49*8], ax
   mov word [idt+49*8+2], CODE32
-  mov word [idt+49*8+4], 0x8E00
+  mov word [idt+49*8+4], 0x8F00
   shr eax, 16
   mov [idt+49*8+6], ax
+
+  ; IRQ0 (timer)
+  mov eax, IRQ0_wrapper
+  mov [idt+32*8], ax
+  mov word [idt+32*8+2], CODE32
+  mov word [idt+32*8+4], 0x8E00
+  shr eax, 16
+  mov [idt+32*8+6], ax
+
+  ; IRQ31 (spurious)
+  mov eax, IRQ31_wrapper
+  mov [idt+63*8], ax
+  mov word [idt+63*8+2], CODE32
+  mov word [idt+63*8+4], 0x8E00
+  shr eax, 16
+  mov [idt+63*8+6], ax
+
+  ; Load IDT
   lidt [idtr]
 
 	popad

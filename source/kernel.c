@@ -270,17 +270,21 @@ void kernel()
 	// Init heap
 	heap_init();
 
+  // Init LAPIC
+  lapic_init();
+
 	// Init disks info
 	io_disks_init_info();
 
   // Init FS info
   fs_init_info();
 
-  putstr("Starting...\n");
-
 	// Print current disk
 	debug_putstr("system disk: %2x\n",
 		system_disk);
+
+  // Show starting message
+  putstr("Starting...\n");
 
 	// Integrated CLI
 	while(1) {
@@ -288,9 +292,9 @@ void kernel()
 
 		// Prompt and wait command
 		putstr("> ");
-    //dump_regs();
 		getstr(str, sizeof(str));
 
+    // Execute
 		execute(str);
 	}
 }

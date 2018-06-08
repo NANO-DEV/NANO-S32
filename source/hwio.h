@@ -27,6 +27,8 @@ void io_disks_init_info();
 uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff);
 uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void* buff);
 
+// Init lapic, including timer
+void lapic_init();
 
 // Shutdown computer
 void apm_shutdown();
