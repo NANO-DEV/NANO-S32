@@ -12,10 +12,37 @@ static inline uint8_t inb(uint16_t port)
   return data;
 }
 
+// Read word from port
+static inline uint16_t inw(uint16_t port)
+{
+  uint16_t data;
+
+  __asm__ volatile("in %1,%0" : "=a"(data) : "d"(port));
+  return data;
+}
+
 // Write byte to port
 static inline void outb(uint16_t port, uint8_t data)
 {
   __asm__ volatile("out %0,%1" : : "a"(data), "d"(port));
+}
+
+// Read array from port
+static inline void insl(uint16_t port, void* addr, size_t cnt)
+{
+  __asm__ volatile("cld; rep insl" :
+               "=D"(addr), "=c"(cnt) :
+               "d"(port), "0"(addr), "1"(cnt) :
+               "memory", "cc");
+}
+
+// Write array to port
+static inline void outsl(uint16_t port, const void* addr, size_t cnt)
+{
+  __asm__ volatile("cld; rep outsl" :
+               "=S"(addr), "=c"(cnt) :
+               "d"(port), "0"(addr), "1"(cnt) :
+               "cc");
 }
 
 // Get MSR
@@ -29,8 +56,8 @@ static inline void read_MSR(uint32_t msr, uint32_t* lo, uint32_t* hi)
 #define X86_ZF 0x04
 
 typedef struct __attribute__ ((packed)) {
-	unsigned short di, si, bp, sp, bx, dx, cx, ax;
-	unsigned short gs, fs, es, ds, eflags;
+  unsigned short di, si, bp, sp, bx, dx, cx, ax;
+  unsigned short gs, fs, es, ds, eflags;
 } regs16_t;
 
 // Perform a bios call switching to virtual 8086 mode

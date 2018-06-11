@@ -285,7 +285,7 @@ void io_vga_putc_attr(uint x, uint y, char c, uint8_t attr)
   const uint pos = VGA_WIDTH*y + x;
   VGA_MEMORY[pos] = (c & 0xFF) | (attr << 8);
 
-	return;
+  return;
 }
 
 // Clear screen
@@ -329,13 +329,13 @@ void io_vga_showcursor(uint show)
 {
   if(!show) {
     outb(VGA_PORT, 0x0A);
-	  outb(VGA_PORT+1, 0x20);
+    outb(VGA_PORT+1, 0x20);
   } else {
     outb(VGA_PORT, 0x0A);
-	  outb(VGA_PORT+1, (inb(VGA_PORT+1) & 0xC0) | 0xC);
+    outb(VGA_PORT+1, (inb(VGA_PORT+1) & 0xC0) | 0xC);
 
-  	outb(VGA_PORT, 0x0B);
-  	outb(VGA_PORT+1, (inb(VGA_PORT+8) & 0xE0) | 0xE);
+    outb(VGA_PORT, 0x0B);
+    outb(VGA_PORT+1, (inb(VGA_PORT+8) & 0xE0) | 0xE);
   }
 }
 
@@ -462,7 +462,7 @@ static volatile uint ints_per_second = 5000000;
 // Initialize lapic
 void lapic_init()
 {
-  __asm__ volatile("cli");
+  __asm__("cli");
 
   uint32_t eax, edx;
   read_MSR(IA32_APIC_BASE_MSR, &eax, &edx);
@@ -494,7 +494,7 @@ void lapic_init()
   // Enable interrupts on the APIC
   lapicw(TPR, 0x0);
 
-  __asm__ volatile("sti");
+  __asm__("sti");
 }
 
 // Inhibit LAPIC interrupts
@@ -632,32 +632,195 @@ static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
   return result;
 }
 
+#define IDE_BSY       0x80
+#define IDE_DRDY      0x40
+#define IDE_DF        0x20
+#define IDE_DRQ       0x08
+#define IDE_ERR       0x01
+
+#define IDE_CMD_READ  0x20
+#define IDE_CMD_WRITE 0x30
+#define IDE_CMD_IDENT 0xEC
+
+// Around two seconds (400ns per port read)
+#define ATA_ATTEMPTS  (2e9/400)
+
+// Wait for disk ready. Return 0 on success
+static uint ATA_PIO_waitdisk()
+{
+  uint r = 0;
+  for(uint i=0; i<ATA_ATTEMPTS; i++) {
+    r = inb(0x1F7);
+    if(r & IDE_ERR) {
+      debug_putstr("ATA wait disk error: %x\n", r);
+      break;
+    }
+    if((r & (IDE_BSY|IDE_DRDY)) == IDE_DRDY) {
+      break;
+    }
+  }
+
+  return (r & (IDE_DF|IDE_ERR));
+}
+
+// Read sectors using ATA PIO mode
+// Return 0 on success
+static uint ATA_PIO_readsector(uint disk, uint sector, size_t n, void* buff)
+{
+  // Set disk and wait
+  outb(0x1F6, (((disk-2)&1)<<4) | 0xE0);
+  uint result = ATA_PIO_waitdisk();
+  if(result == 0) {
+
+    // Issue command
+    outb(0x1F2, n);
+    outb(0x1F3, sector);
+    outb(0x1F4, sector >> 8);
+    outb(0x1F5, sector >> 16);
+    outb(0x1F6, (sector >> 24) | (((disk-2)&1)<<4) | 0xE0);
+    outb(0x1F7, IDE_CMD_READ);
+
+    // Read and copy data
+    result = ATA_PIO_waitdisk();
+    if(result == 0) {
+      insl(0x1F0, buff, n*DISK_SECTOR_SIZE/4);
+    }
+  }
+  return result;
+}
+
+// Write sectors using ATA PIO mode
+// Return 0 on success
+static uint ATA_PIO_writesector(uint disk, uint sector, size_t n, const void* buff)
+{
+  // Set disk and wait
+  outb(0x1F6, (((disk-2)&1)<<4) | 0xE0);
+  uint result = ATA_PIO_waitdisk();
+  if(result != 0) {
+    return result;
+  }
+
+  // Issue command
+  outb(0x1F2, n);
+  outb(0x1F3, sector);
+  outb(0x1F4, sector >> 8);
+  outb(0x1F5, sector >> 16);
+  outb(0x1F6, (sector >> 24) | (((disk-2)&1)<<4) | 0xE0);
+  outb(0x1F7, IDE_CMD_WRITE);
+
+  // Write and copy data
+  outsl(0x1F0, buff, n*DISK_SECTOR_SIZE/4);
+  return ATA_PIO_waitdisk();
+}
+
+// Detect ATA disk size and model
+#define ATADEV_PATAPI 0xEB14
+#define ATADEV_SATAPI 0x9669
+#define ATADEV_PATA 0x0000
+#define ATADEV_SATA 0xC33C
+static uint ATA_detect(uint disk, char* model, size_t model_size )
+{
+  // Send IDENTIFY command
+	outb(0x1F6, (((disk-2)&1)<<4) | 0xA0);
+  outb(0x1F7, IDE_CMD_IDENT);
+
+  uint result = 0;
+  // Check disk exists
+  for(uint i=0; i<ATA_ATTEMPTS; i++) {
+    result = inb(0x1F7);
+    if(result != 0) {
+      break;
+    }
+  }
+
+  // Resturn "no disk"
+  if(result == 0) {
+    debug_putstr("ATA identifying disk %u: no disk\n", disk);
+    return 0;
+  }
+
+  // Wait
+  for(uint i=0; i<ATA_ATTEMPTS; i++) {
+    result = inb(0x1F7);
+    if(result & IDE_ERR) {
+      debug_putstr("ATA identifying disk %u: error waiting: %x\n",
+        disk, result);
+      return 0;
+    }
+    if((result & IDE_BSY) == 0) {
+      break;
+    }
+  }
+
+  // Check ready
+  for(uint i=0; i<ATA_ATTEMPTS; i++) {
+    result = inb(0x1F7);
+    if((result & (IDE_DRQ|IDE_ERR)) != 0) {
+      break;
+    }
+  }
+
+  if((result & IDE_ERR) || !(result & IDE_DRQ)) {
+    debug_putstr("ATA identifying disk %u: error not ready: %x\n",
+      disk, result);
+    return 0;
+  }
+
+  // Read identification
+  model_size = min(model_size, 40);
+  uint16_t identification[2] = {0};
+  uint32_t num_sectors = 0;
+  for(uint i=0; i<256; i++) {
+    identification[i%2] = inw(0x1F0);
+    // Byte 54 to 94 contain a model string
+    if(i>=27 && i<27+(model_size/2)) {
+        model[2*(i-27)+1] = identification[i%2] & 0xFF;
+        model[2*(i-27)+0] = (identification[i%2] & 0xFF00)>>8;
+
+    // Words 60 and 61 read as 32-bit contain number of sectors
+    } else if(i==61) {
+      num_sectors = identification[0] | (identification[1]<<16);
+    }
+  }
+
+  if(model_size > 0) {
+    model[model_size-1] = 0;
+  }
+  debug_putstr("ATA idenfitying disk %u:_num_sectors: %u\n", disk, num_sectors);
+	return num_sectors;
+}
+
 // Initialize disks info
 void io_disks_init_info()
 {
   // Setup disk identifiers
   disk_info[0].id = 0x00; // Floppy disk 0
   strncpy(disk_info[0].name, "fd0", sizeof(disk_info[0].name));
+  strncpy(disk_info[0].desc, "", sizeof(disk_info[0].desc));
 
   disk_info[1].id = 0x01; // Floppy disk 1
   strncpy(disk_info[1].name, "fd1", sizeof(disk_info[1].name));
+  strncpy(disk_info[1].desc, "", sizeof(disk_info[1].desc));
 
   disk_info[2].id = 0x80; // Hard disk 0
   strncpy(disk_info[2].name, "hd0", sizeof(disk_info[2].name));
+  strncpy(disk_info[2].desc, "", sizeof(disk_info[2].desc));
 
   disk_info[3].id = 0x81; // Hard disk 1
   strncpy(disk_info[3].name, "hd1", sizeof(disk_info[3].name));
+  strncpy(disk_info[3].desc, "", sizeof(disk_info[3].desc));
 
   // Initialize hardware related disks info
-	for(uint i=0; i<MAX_DISK; i++) {
+  for(uint i=0; i<MAX_DISK; i++) {
     uint hwdisk = disk_info[i].id;
 
     // Try to get info
-		diskinfo_t dinfo;
+    diskinfo_t dinfo;
     uint result = disk_get_info(hwdisk, &dinfo);
-		disk_info[i].sectors = dinfo.sector_num;
-		disk_info[i].sides = dinfo.head_num;
-		disk_info[i].cylinders = dinfo.cylinder_num;
+    disk_info[i].sectors = dinfo.sector_num;
+    disk_info[i].sides = dinfo.head_num;
+    disk_info[i].cylinders = dinfo.cylinder_num;
+    disk_info[i].isATA = 0;
 
     // Use retrieved data if success
     if(result == 0) {
@@ -667,9 +830,23 @@ void io_disks_init_info()
 
       disk_info[i].last_access = 0;
 
-      debug_putstr("DISK (%2x : size=%u MB sect_per_track=%d, sides=%d, cylinders=%d)\n",
+      if(i >= 2) {
+        char model[sizeof(disk_info[i].desc)] = {0};
+        uint ATA_num_sectors = ATA_detect(i, model, sizeof(model));
+        if(ATA_num_sectors > 0) {
+          disk_info[i].isATA = 1;
+          disk_info[i].size = (ATA_num_sectors * DISK_SECTOR_SIZE)/(1024*1024);
+          if(strlen(model)) {
+            strncpy(disk_info[i].desc, model, sizeof(disk_info[i].desc));
+          } else {
+            strncpy(disk_info[i].desc, "ATA", sizeof(disk_info[i].desc));
+          }
+        }
+      }
+
+      debug_putstr("DISK (%2x : size=%u MB sect_per_track=%d, sides=%d, cylinders=%d) %s\n",
         hwdisk, disk_info[i].size, disk_info[i].sectors, disk_info[i].sides,
-        disk_info[i].cylinders);
+        disk_info[i].cylinders, disk_info[i].desc);
 
     } else {
       // Failed. Do not use this disk
@@ -702,43 +879,71 @@ static void lba_to_chs( uint lba, uint spt, uint nh, chs_t* chs)
 // Return 0 on success
 static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
 {
-  uint hwdisk = disk_to_hwdisk(disk);
-
-  chs_t chs;
-  lba_to_chs(sector, disk_info[disk].sectors,
-    disk_info[disk].sides, &chs);
-
-  regs16_t regs;
   uint result = 0;
 
-  for(uint attempt=0; attempt<3; attempt++) {
-    if(attempt>0) {
-      result = disk_reset(hwdisk);
+  // Use ATA PIO for IDE
+  if(disk_info[disk].isATA) {
+    while(n > 0) {
+      uint n_sectors = min(n,255);
+      result = ATA_PIO_readsector(disk, sector, n_sectors, buff);
+      n -= n_sectors;
+      sector += n_sectors;
+      buff += n_sectors * DISK_SECTOR_SIZE;
       if(result) {
-        debug_putstr("io_disk_read_sector: error reseting disk\n");
         break;
       }
     }
 
-    memset(&regs, 0, sizeof(regs));
-    regs.ax = (0x02 << 8) | n;
-    regs.cx =
-      ((chs.cylinder & 0xFF) << 8) |
-      (chs.sector & 0x3F) |
-      ((chs.cylinder & 0x300) >> 2);
+  // Use BIOS otherwise
+  } else {
+    uint hwdisk = disk_to_hwdisk(disk);
 
-    regs.dx = (chs.head << 8) | hwdisk;
-    regs.es = ((uint)buff) / 0x10000;
-    regs.bx = ((uint)buff) % 0x10000;
-    __asm__("stc");
-    int32(0x13, &regs);
+    chs_t chs;
+    regs16_t regs;
 
-    result = (regs.eflags & X86_CF);
-    if(!result) {
-      break;
-    }
-    else {
-      result = (regs.ax & 0xFF00) >> 8;
+    // Handle DMA access 64kb boundary
+    // Write sector by sector using disk buffer
+    for(uint s=0; s<n; s++) {
+      lba_to_chs(sector+s, disk_info[disk].sectors,
+        disk_info[disk].sides, &chs);
+
+      for(uint attempt=0; attempt<3; attempt++) {
+        if(attempt>0) {
+          result = disk_reset(hwdisk);
+          if(result) {
+            debug_putstr("io_disk_read_sector: error reseting disk\n");
+            break;
+          }
+        }
+
+        memset(&regs, 0, sizeof(regs));
+        regs.ax = (0x02 << 8) | 1;
+        regs.cx =
+          ((chs.cylinder & 0xFF) << 8) |
+          (chs.sector & 0x3F) |
+          ((chs.cylinder & 0x300) >> 2);
+
+        regs.dx = (chs.head << 8) | hwdisk;
+        regs.es = ((uint)disk_buff) / 0x10000;
+        regs.bx = ((uint)disk_buff) % 0x10000;
+        __asm__("stc");
+        int32(0x13, &regs);
+
+        result = (regs.eflags & X86_CF);
+        if(!result) {
+          if(buff != disk_buff) {
+            memcpy(buff+s*DISK_SECTOR_SIZE, disk_buff, DISK_SECTOR_SIZE);
+          }
+          break;
+        } else {
+          result = (regs.ax & 0xFF00) >> 8;
+        }
+      }
+
+      // Break on error
+      if(result) {
+        break;
+      }
     }
   }
 
@@ -783,17 +988,10 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   n_sectors = size / DISK_SECTOR_SIZE;
 
   if(n_sectors && result == 0) {
-    // Handle DMA access 64kb boundary. Read sector by sector
-    for(; n_sectors > 0; n_sectors--) {
-      result = disk_read_sector(disk, sector, 1, disk_buff);
-      if(result != 0) {
-        break;
-      }
-      memcpy(buff+i, disk_buff, DISK_SECTOR_SIZE);
-      i += DISK_SECTOR_SIZE;
-      sector++;
-      size -= DISK_SECTOR_SIZE;
-    }
+    result = disk_read_sector(disk, sector, n_sectors, buff+i);
+    i += n_sectors * DISK_SECTOR_SIZE;
+    sector += n_sectors;
+    size -= n_sectors * DISK_SECTOR_SIZE;
   }
 
   // io_disk_read_sector can only read entire and aligned sectors.
@@ -814,42 +1012,72 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
 // Returns 0 on success
 static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff)
 {
-  uint hwdisk = disk_to_hwdisk(disk);
-
-  chs_t chs;
-  lba_to_chs(sector, disk_info[disk].sectors,
-    disk_info[disk].sides, &chs);
-
-  regs16_t regs;
   uint result = 0;
 
-  for(uint attempt=0; attempt<3; attempt++) {
-    if(attempt>0) {
-      result = disk_reset(hwdisk);
+  // Use ATA PIO for IDE
+  if(disk_info[disk].isATA) {
+    while(n > 0) {
+      uint n_sectors = min(n,255);
+      result = ATA_PIO_writesector(disk, sector, n_sectors, buff);
+      n -= n_sectors;
+      sector += n_sectors;
+      buff += n_sectors * DISK_SECTOR_SIZE;
       if(result) {
-        debug_putstr("io_disk_write_sector: error reseting disk\n");
         break;
       }
     }
 
-    memset(&regs, 0, sizeof(regs));
-    regs.ax = (0x03 << 8) | n;
-    regs.cx =
-      ((chs.cylinder & 0xFF) << 8) |
-      (chs.sector & 0x3F) |
-      ((chs.cylinder & 0x300) >> 2);
+  // Use BIOS otherwise
+  } else {
+    uint hwdisk = disk_to_hwdisk(disk);
 
-    regs.dx = (chs.head << 8) | hwdisk;
-    regs.es = ((uint)buff) / 0x10000;
-    regs.bx = ((uint)buff) % 0x10000;
-    __asm__("stc");
-    int32(0x13, &regs);
+    chs_t chs;
+    regs16_t regs;
 
-    result = (regs.eflags & X86_CF);
-    if(!result) {
-      break;
-    } else {
-      result = (regs.ax & 0xFF00) >> 8;
+    // Handle DMA access 64kb boundary
+    // Write sector by sector using disk buffer
+    for(uint s=0; s<n; s++) {
+      if(buff != disk_buff) {
+        memcpy(disk_buff, buff+DISK_SECTOR_SIZE*s, DISK_SECTOR_SIZE);
+      }
+
+      lba_to_chs(sector+s, disk_info[disk].sectors,
+        disk_info[disk].sides, &chs);
+
+      for(uint attempt=0; attempt<3; attempt++) {
+        if(attempt>0) {
+          result = disk_reset(hwdisk);
+          if(result) {
+            debug_putstr("io_disk_write_sector: error reseting disk\n");
+            break;
+          }
+        }
+
+        memset(&regs, 0, sizeof(regs));
+        regs.ax = (0x03 << 8) | 1;
+        regs.cx =
+          ((chs.cylinder & 0xFF) << 8) |
+          (chs.sector & 0x3F) |
+          ((chs.cylinder & 0x300) >> 2);
+
+        regs.dx = (chs.head << 8) | hwdisk;
+        regs.es = ((uint)disk_buff) / 0x10000;
+        regs.bx = ((uint)disk_buff) % 0x10000;
+        __asm__("stc");
+        int32(0x13, &regs);
+
+        result = (regs.eflags & X86_CF);
+        if(!result) {
+          break;
+        } else {
+          result = (regs.ax & 0xFF00) >> 8;
+        }
+      }
+
+      // Break on error
+      if(result) {
+        break;
+      }
     }
   }
 
@@ -895,17 +1123,10 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
   n_sectors = size / DISK_SECTOR_SIZE;
 
   if(n_sectors && result == 0) {
-    // Handle DMA access 64kb boundary. Write sector by sector
-    for(; n_sectors > 0; n_sectors--) {
-      memcpy(disk_buff, buff+i, DISK_SECTOR_SIZE);
-      result = disk_write_sector(disk, sector, 1, disk_buff);
-      if(result != 0) {
-        break;
-      }
-      i += DISK_SECTOR_SIZE;
-      sector++;
-      size -= DISK_SECTOR_SIZE;
-    }
+    result = disk_write_sector(disk, sector, n_sectors, buff+i);
+    i += n_sectors * DISK_SECTOR_SIZE;
+    sector += n_sectors;
+    size -= n_sectors * DISK_SECTOR_SIZE;
   }
 
   // io_disk_write_sector can only write entire and aligned sectors.

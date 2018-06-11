@@ -5,7 +5,7 @@
 
 #define OS_VERSION_HI 1
 #define OS_VERSION_LO 0
-#define OS_BUILD_NUM 9
+#define OS_BUILD_NUM 10
 
 // Hardware related disk information is handled by the kernel module.
 // File system related information is handled by file system module
@@ -14,8 +14,10 @@
 struct DISKINFO {
     uint  id;          // Disk id
     char  name[4];     // Disk name
+    char  desc[32];    // Desc
     uint  fstype;      // File system type: see ulib.h
     uint  fssize;      // Number of blocks in file system
+    uint  isATA;
     uint  sectors;
     uint  sides;
     uint  cylinders;

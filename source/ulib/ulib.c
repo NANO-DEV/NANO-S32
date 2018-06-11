@@ -38,11 +38,11 @@ size_t strcmp(const char* str1, const char* str2)
 // Get string length
 size_t strlen(const char* str)
 {
-	size_t len = 0;
-	while(str[len]) {
-		len++;
-	}
-	return len;
+  size_t len = 0;
+  while(str[len]) {
+    len++;
+  }
+  return len;
 }
 
 // Copy string src to dst without exceeding
@@ -331,7 +331,7 @@ uint getkey()
 // Returns number of elements in str
 int getstr(char* str, size_t n)
 {
-	uint col, row;
+  uint col, row;
   uint i = 0;
   uint k = 0;
 
@@ -348,9 +348,9 @@ int getstr(char* str, size_t n)
     // Get a key press
     k = getkey();
 
-		if(k==0){
-			continue;
-		}
+    if(k==0){
+      continue;
+    }
 
     // Backspace
     if(k == KEY_BACKSPACE) {
@@ -359,18 +359,18 @@ int getstr(char* str, size_t n)
         i--;
       }
 
-	  // Delete
-	  } else if(k == KEY_DEL) {
+    // Delete
+    } else if(k == KEY_DEL) {
       if(i < n-1) {
         memcpy(&str[i], &str[i+1], n-i-1);
       }
 
-	  // Return
-	  } else if(k == KEY_RETURN) {
+    // Return
+    } else if(k == KEY_RETURN) {
       break;
 
-	  // Cursor movement keys
-	  } else if(k == KEY_LEFT && i>0) {
+    // Cursor movement keys
+    } else if(k == KEY_LEFT && i>0) {
       i--;
     } else if(k == KEY_RIGHT && i<strlen(str)) {
       i++;
@@ -379,8 +379,8 @@ int getstr(char* str, size_t n)
     } else if(k == KEY_END) {
       i = strlen(str);
 
-	  // Not useful or allowed char
-	  } else if(k!=KEY_TAB && (k<0x20 || k>0x7E)) {
+    // Not useful or allowed char
+    } else if(k!=KEY_TAB && (k<0x20 || k>0x7E)) {
       continue;
 
     // Append char to string
