@@ -729,7 +729,7 @@ static void execute(char* str)
     }
 
     if(result >= ERROR_ANY || result == 0) {
-      putstr("unkown command\n");
+      putstr("unknown command\n");
     } else {
       uint uarg = 0;
       uint c = 0;
