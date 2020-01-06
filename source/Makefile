@@ -13,7 +13,7 @@ LDFLAGS := -melf_i386 --oformat binary
 
 all: $(BOOTDIR)boot.bin kernel.n32 programs
 
-programs: $(PROGDIR)test.bin $(PROGDIR)edit.bin
+programs: $(PROGDIR)test.bin $(PROGDIR)edit.bin $(PROGDIR)nas.bin
 
 $(PROGDIR)%.bin: $(PROGDIR)%.c $(ULIBDIR)ulib.o
 	$(CC) $(CFLAGS) -I. -o $(PROGDIR)$*.o -c $(PROGDIR)$*.c
@@ -22,11 +22,14 @@ $(PROGDIR)%.bin: $(PROGDIR)%.c $(ULIBDIR)ulib.o
 $(BOOTDIR)boot.bin: $(BOOTDIR)boot.s
 	$(NASM) -O0 -w+orphan-labels -f bin -o $@ $(BOOTDIR)boot.s
 
-kernel.n32: load.o kernel.o hwio.o fs.o x86.o $(ULIBDIR)ulib.o
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0x8000 -o $@ load.o x86.o kernel.o hwio.o fs.o $(ULIBDIR)ulib.o
+kernel.n32: load.o kernel.o cli.o hwio.o fs.o x86.o $(ULIBDIR)ulib.o
+	$(LD) $(LDFLAGS) -N -e start -Ttext 0x8000 -o $@ load.o x86.o kernel.o cli.o hwio.o fs.o $(ULIBDIR)ulib.o
 
 load.o: load.S
 	$(CC) $(CFLAGS) -o $@ -c load.S
+
+cli.o: cli.c cli.h kernel.h types.h hwio.h syscall.h $(ULIBDIR)ulib.h x86.h fs.h
+	$(CC) $(CFLAGS) -o $@ -c cli.c
 
 kernel.o: kernel.c kernel.h types.h hwio.h syscall.h $(ULIBDIR)ulib.h x86.h fs.h
 	$(CC) $(CFLAGS) -o $@ -c kernel.c
