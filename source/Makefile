@@ -50,7 +50,7 @@ $(ULIBDIR)ulib.o: $(ULIBDIR)ulib.c $(ULIBDIR)ulib.h syscall.h types.h
 	$(CC) $(CFLAGS) -I. -o $@ -c $(ULIBDIR)ulib.c
 
 x86.o: x86.s
-	$(NASM) -O0 -w+orphan-labels -f aout -o $@ x86.s
+	$(NASM) -O0 -w+orphan-labels -f elf -o $@ x86.s
 
 clean:
 	@find . -name "*.o" -type f -delete

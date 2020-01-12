@@ -68,7 +68,7 @@ The building process is expected to be executed in a Linux system. In Windows 10
     * optionally use dd to write disk images on storage devices
     ```
     sudo apt-get install gcc nasm make
-    sudo apt-get install qemu
+    sudo apt-get install qemu qemu-system-x86
     ```
 
 2. Get full source code tree.
@@ -243,7 +243,7 @@ The easiest way develop new user programs is thorugh corss development:
     #include "types.h"
     #include "ulib/ulib.h"
 
-    uint main(int argc, char* argv[])
+    int main(int argc, char* argv[])
     {
       return 0;
     }

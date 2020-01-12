@@ -190,7 +190,7 @@ void clear_screen()
 // Supports: %d (int), %u (uint), %x (uint),
 // %s (char*), %c (char)
 #define D_STR_SIZE 24
-typedef void* putcharf_t(char);
+typedef void (putcharf_t)(char);
 static void formatstr_putf(const char* format, uint* args, putcharf_t putchar)
 {
   size_t char_count = 0;

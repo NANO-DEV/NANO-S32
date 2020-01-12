@@ -2,7 +2,7 @@
 
 [bits 32]
 
-section .text
+;section .text
 
 ; void dump_regs()
 ; Dump register values through debug output
