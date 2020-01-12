@@ -15,8 +15,8 @@
 #define EDITOR_ATTRIBUTES (AT_T_WHITE|AT_B_BLUE)
 
 // Screen size
-static uint SCREEN_WIDTH = 80;
-static uint SCREEN_HEIGHT = 28;
+#define SCREEN_WIDTH  80
+#define SCREEN_HEIGHT 28
 
 // This buffer holds a copy of screen chars
 // Screen is only updated when it's actually needed
@@ -26,9 +26,8 @@ static char* screen_buff = 0;
 // the screen
 static void editor_putchar(uint col, uint row, char c)
 {
-  char buff_c = 0;
-  uint screen_offset = col + (row-1)*SCREEN_WIDTH;
-  buff_c = *(screen_buff + screen_offset);
+  const uint screen_offset = col + (row-1)*SCREEN_WIDTH;
+  const char buff_c = *(screen_buff + screen_offset);
 
   if(c != buff_c) {
     *(screen_buff + screen_offset) = c;
@@ -45,10 +44,9 @@ static void editor_putchar(uint col, uint row, char c)
 // - just skipped if mode==SKIP_CURRENT
 static char* next_line(uint mode, uint row, char* line)
 {
-  uint col = 0;
-
   // Process string until next line or end of string
   // and show text if needed
+  uint col = 0;
   while(line && *line && *line!='\n' && col<SCREEN_WIDTH) {
     if(mode == SHOW_CURRENT) {
       editor_putchar(col, row, *line);
@@ -75,9 +73,8 @@ static char* next_line(uint mode, uint row, char* line)
 // It's recommended to hide cursor before calling this function
 void show_buffer_at_line(char* buff, uint n)
 {
-  uint l = 0;
-
   // Skip buffer until required line number
+  uint l = 0;
   while(l<n && *buff) {
     buff = next_line(SKIP_CURRENT, 0, buff);
     l++;
@@ -150,13 +147,10 @@ uint linecol_to_buffer_offset(char* buff, uint col, uint line)
 uint buffer_offset_to_fileline(char* buff, uint offset)
 {
   uint line = 0;
-
   for(; offset>0 && *buff; offset--, buff++) {
-
     if(*buff == '\n') {
       line++;
     }
-
   }
 
   return line;
@@ -165,51 +159,29 @@ uint buffer_offset_to_fileline(char* buff, uint offset)
 // Program entry point
 int main(int argc, char* argv[])
 {
-  const char* title_info = "L:     F1:Save ESC:Exit";
-  char line_ibcd[4]; // To store line number digits
-  uint ibcdt;
-
-  uint i = 0;
-  uint n = 0;
-  uint result = 0;
-
-  // buff is fixed size and allocated in memory so it
-  // can be big enough.
-  // buff_size is the size in bytes actually used in buff
-  // buff_cursor_offset is the linear offset of current
-  // cursor position inside buff
-
-  char* buff = 0;
-  size_t buff_size = 0;
-  uint buff_cursor_offset = 0;
-
-  // First line number to display in the editor area
-  uint current_line = 0;
-
-  // Var to get key presses
-  uint k = 0;
-
-  FS_ENTRY entry;
-
   // Chck usage
   if(argc != 2) {
     putstr("Usage: %s <file>\n\n", argv[0]);
     putstr("<file> can be:\n");
     putstr("-an existing file path: opens existing file to edit\n");
-    putstr("-a new file path: opens empty editor. File will be created on save\n");
+    putstr("-a new file path: opens empty editor. File is created on save\n");
     putstr("\n");
     return 1;
   }
 
   // Allocate fixed size text buffer
-  buff = malloc(0xFFFF);
+  char* buff = malloc(0xFFFF);
   if(buff == 0) {
     putstr("Error: can't allocate memory\n");
     return 1;
   }
 
   // Find file
-  n = get_entry(&entry, argv[1], UNKNOWN_VALUE, UNKNOWN_VALUE);
+  fs_entry_t entry;
+  const uint n = get_entry(&entry, argv[1], UNKNOWN_VALUE, UNKNOWN_VALUE);
+
+   // buff_size is the size in bytes actually used in buff
+  size_t buff_size = 0;
 
   // Load file or show error
   if(n<ERROR_ANY && (entry.flags & FST_FILE)) {
@@ -222,7 +194,7 @@ int main(int argc, char* argv[])
 
     memset(buff, 0, entry.size);
     buff_size = entry.size;
-    result = read_file(buff, argv[1], 0, buff_size);
+    uint result = read_file(buff, argv[1], 0, buff_size);
     debug_putstr("File read\n");
 
     if(result >= ERROR_ANY) {
@@ -269,16 +241,22 @@ int main(int argc, char* argv[])
   memset(screen_buff, 0, (SCREEN_WIDTH*(SCREEN_HEIGHT-1)));
 
   // Write title
-  for(i=0; i<strlen(argv[1]); i++) {
-    putc_attr(i, 0, argv[1][i], TITLE_ATTRIBUTES);
+  const char* title_info = "L:     F1:Save ESC:Exit";
+  uint title_char = 0;
+  for(title_char=0; title_char<strlen(argv[1]); title_char++) {
+    putc_attr(title_char, 0, argv[1][title_char], TITLE_ATTRIBUTES);
   }
-  for(; i<SCREEN_WIDTH-strlen(title_info); i++) {
-    putc_attr(i, 0, ' ', TITLE_ATTRIBUTES);
+  for(; title_char<SCREEN_WIDTH-strlen(title_info); title_char++) {
+    putc_attr(title_char, 0, ' ', TITLE_ATTRIBUTES);
   }
-  for(; i<SCREEN_WIDTH; i++) {
-    putc_attr(i, 0,
-      title_info[i+strlen(title_info)-SCREEN_WIDTH], TITLE_ATTRIBUTES);
+  for(; title_char<SCREEN_WIDTH; title_char++) {
+    putc_attr(title_char, 0,
+      title_info[title_char+strlen(title_info)-SCREEN_WIDTH], 
+      TITLE_ATTRIBUTES);
   }
+
+  // First line number to display in the editor area
+  uint current_line = 0;
 
   // Show buffer and set cursor at start
   set_show_cursor(0);
@@ -286,12 +264,19 @@ int main(int argc, char* argv[])
   set_cursor_pos(0, 1);
   set_show_cursor(1);
 
+  // Var to get key presses
+  uint k = 0;
+
+  // buff_cursor_offset is the linear offset of current
+  // cursor position inside buff
+  uint buff_cursor_offset = 0;
+
   // Main loop
   while(k != KEY_ESC) {
-    uint col, line;
+    uint col=0, line=0;
 
     // Get key press
-    k = getkey();
+    k = getkey(GETKEY_WAITMODE_WAIT);
 
     // Process key actions
 
@@ -304,8 +289,8 @@ int main(int argc, char* argv[])
 
     // Key F1: Save
     } else if(k == KEY_F1) {
-      uint offset = 0;
-      result = write_file(buff, argv[1], offset, buff_size, FWF_CREATE | FWF_TRUNCATE);
+      const uint result = write_file(buff, argv[1], 0, 
+        buff_size, FWF_CREATE|FWF_TRUNCATE);
 
       // Update state indicator
       if(result < ERROR_ANY) {
@@ -313,8 +298,8 @@ int main(int argc, char* argv[])
       } else {
         putc_attr(strlen(argv[1]), 0, '*', (TITLE_ATTRIBUTES&0xF0)|AT_T_RED);
       }
-      // This opperation takes some time, so clear keyboard buffer
-      // TODO
+      // This opperation takes some time
+      // Keyboard buffer could be cleared here
 
     // Cursor keys: Move cursor
     } else if(k == KEY_UP) {
@@ -364,7 +349,8 @@ int main(int argc, char* argv[])
     // Backspace key: delete char before cursor and move cursor there
     } else if(k == KEY_BACKSPACE) {
       if(buff_cursor_offset > 0) {
-        memcpy(buff+buff_cursor_offset-1, buff+buff_cursor_offset, buff_size-buff_cursor_offset);
+        memcpy(buff+buff_cursor_offset-1, buff+buff_cursor_offset, 
+          buff_size-buff_cursor_offset);
         buff_size--;
         putc_attr(strlen(argv[1]), 0, '*', TITLE_ATTRIBUTES);
         buff_cursor_offset--;
@@ -373,7 +359,8 @@ int main(int argc, char* argv[])
     // Del key: delete char at cursor
     } else if(k == KEY_DEL) {
       if(buff_cursor_offset < buff_size-1) {
-        memcpy(buff+buff_cursor_offset, buff+buff_cursor_offset+1, buff_size-buff_cursor_offset-1);
+        memcpy(buff+buff_cursor_offset, buff+buff_cursor_offset+1, 
+          buff_size-buff_cursor_offset-1);
         buff_size--;
         putc_attr(strlen(argv[1]), 0, '*', TITLE_ATTRIBUTES);
       }
@@ -387,7 +374,8 @@ int main(int argc, char* argv[])
       if(k == KEY_TAB) {
         k = '\t';
       }
-      memcpy(buff+buff_cursor_offset+1, buff+buff_cursor_offset, buff_size-buff_cursor_offset);
+      memcpy(buff+buff_cursor_offset+1, buff+buff_cursor_offset, 
+        buff_size-buff_cursor_offset);
       *(buff + buff_cursor_offset++) = k;
       buff_size++;
       putc_attr(strlen(argv[1]), 0, '*', TITLE_ATTRIBUTES);
@@ -403,9 +391,10 @@ int main(int argc, char* argv[])
 
     // Update line number in title
     // Compute bcd value (reversed)
-    ibcdt = min(9999, buffer_offset_to_fileline(buff, buff_cursor_offset)+1);
-    n = SCREEN_WIDTH-strlen(title_info)+2;
-    for(i=0; i<4; i++) {
+    char line_ibcd[4]={0}; // To store line number digits
+    uint ibcdt = 
+      min(9999, buffer_offset_to_fileline(buff, buff_cursor_offset)+1);
+    for(uint i=0; i<4; i++) {
       line_ibcd[i] = ibcdt%10;
       ibcdt /= 10;
       if(ibcdt==0) {
@@ -414,9 +403,10 @@ int main(int argc, char* argv[])
       }
     }
     // Display it
-    for(i=0; i<4; i++) {
+    const uint start_pos = SCREEN_WIDTH-strlen(title_info)+2;
+    for(uint i=0; i<4; i++) {
       char c = i<=ibcdt?line_ibcd[ibcdt-i]+'0':' ';
-      putc_attr(n+i, 0, c, TITLE_ATTRIBUTES);
+      putc_attr(start_pos+i, 0, c, TITLE_ATTRIBUTES);
     }
 
     set_show_cursor(0);

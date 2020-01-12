@@ -24,10 +24,10 @@
 
 // Entries are referenced by their index on the entry table
 // Entry with index n is located at byte:
-//   2*BLOCK_SIZE + n*sizeof(SFS_ENTRY)
+//   2*BLOCK_SIZE + n*sizeof(sfs_entry_t)
 //
 // Data blocks start at block
-//   2 + ((superblock.nentries*sizeof(SFS_ENTRY)) / BLOCK_SIZE)
+//   2 + ((superblock.nentries*sizeof(sfs_entry_t)) / BLOCK_SIZE)
 //
 // Data blocks are referenced by their absolute disk block index
 
@@ -39,7 +39,7 @@ typedef struct {  // On-disk superblock structure
   uint32_t  size;         // Total number of block in file system
   uint32_t  nentries;     // Number of entries in entries table
   uint32_t  bootstart;    // Block index of first boot program block
-} SFS_SUPERBLOCK;
+} sfs_superblock_t;
 
 // The boot program must be stored in contiguous data blocks
 
@@ -65,9 +65,9 @@ typedef struct {             // On-disk entry structure
   uint32_t  parent;             // Parent dir entry, or previous chained entry
   uint32_t  next;               // Next chained entry index. See below
   uint32_t  ref[SFS_ENTRYREFS]; // References to blocks or entries. See below
-} SFS_ENTRY;
+} sfs_entry_t;
 
-// With the current implementation, sizeof(SFS_ENTRY) must be a power of 2
+// With the current implementation, sizeof(sfs_entry_t) must be a power of 2
 
 // References in file entries contain ordered data block indexes
 // References in directory entries contain subentries indexes
@@ -139,7 +139,7 @@ void fs_init_info();
 // Output: info
 // disk refers to the index on currently available disks list.
 // returns number of available disks
-uint fs_get_info(uint disk, FS_INFO* info);
+uint fs_get_info(uint disk, fs_info_t* info);
 
 // Get filesystem entry
 // Output: entry
@@ -149,7 +149,7 @@ uint fs_get_info(uint disk, FS_INFO* info);
 // - absolute or relative to system disk if parent and/or disk are unknown
 // - relative to parent if parent index entry or disk id are provided
 // Returns ERROR_NOT_FOUND if error, entry index otherwise
-uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk);
+uint fs_get_entry(sfs_entry_t* entry, char* path, uint parent, uint disk);
 
 // Read file
 // Output: buff
@@ -204,7 +204,7 @@ uint fs_create_directory(char* path);
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - number of elements in ths directory otherwise
-uint fs_list(SFS_ENTRY* entry, char* path, uint n);
+uint fs_list(sfs_entry_t* entry, char* path, uint n);
 
 // Create filesystem in disk
 // Deletes all files, creates NSFS filesystem

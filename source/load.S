@@ -6,8 +6,6 @@
 # The primary boot loader code supplies the following parameters:
 # dl = Boot-disk
 
-# Serial port is also initialized here
-
 # Macros to create x86 segments
 
 #define SEG_NULLASM                                             \
@@ -41,8 +39,9 @@
 
 .code16                        # Assemble for 16-bit mode
 .globl start, system_hwdisk
+.section .text.startup
 start:
-  cli                         # BIOS enabled interrupts; disable
+  cli                          # BIOS enabled interrupts; disable
 
   # Zero data segment registers DS, ES, and SS
   xorw    %ax,%ax              # Set %ax to zero
@@ -60,11 +59,7 @@ start:
   movw    $0x2401,%ax          # A20-Gate Activate by BIOS
   int     $0x15
 
-;  movb $0xFF,%al
-;  outb %al,$0xA1
-;  outb %al,$0x21
-
-  # Switch from real to protected mode.  Use a flat GDT that makes
+  # Switch from real to protected mode. Use a flat GDT that makes
   # virtual addresses map directly to physical addresses so that the
   # effective memory map doesn't change during the transition
   lgdt    gdtdesc
@@ -77,6 +72,7 @@ start:
   # translation, so that the mapping is still the identity mapping
   ljmp    $(SEG_KCODE<<3), $start32
 
+.section .text
 .code32  # Tell assembler to generate 32-bit code now
 start32:
   # Set up the protected-mode data segment registers
@@ -92,7 +88,7 @@ start32:
   movl    $start, %esp
   call    kernel
 
-  # If bootmain returns (it shouldn't), loop
+  # If kernel returns (it shouldn't), loop
 spin:
   jmp     spin
 

@@ -7,7 +7,9 @@
 #include "fs.h"
 #include "syscall.h"
 #include "x86.h"
+#include "pci.h"
 #include "cli.h"
+#include "net.h"
 
 uint8_t system_disk = 0xFF;
 
@@ -26,32 +28,28 @@ static HEAPBLOCK heap[HEAP_NUM_BLOCK];
 // Init heap: all blocks are unused
 static void heap_init()
 {
-  uint i;
-  for(i=0; i<HEAP_NUM_BLOCK; i++) {
+  for(uint i=0; i<HEAP_NUM_BLOCK; i++) {
     heap[i].used = 0;
-    heap[i].ptr = 0;
+    heap[i].ptr = NULL;
   }
 }
 
 // Allocate memory in heap
 static void* heap_alloc(size_t size)
 {
-  uint n_alloc = 0;
-  uint n_found = 0;
-  uint i, j;
-
   if(size == 0) {
     return 0;
   }
 
   // Get number of blocks to allocate
-  n_alloc = size / HEAP_BLOCK_SIZE +
+  uint n_alloc = size / HEAP_BLOCK_SIZE +
     ((size % HEAP_BLOCK_SIZE) ? 1 : 0);
 
   debug_putstr("heap: looking for %u blocks\n", n_alloc);
 
   // Find a continuous set of n_alloc free blocks
-  for(i=0; i<HEAP_NUM_BLOCK; i++) {
+  uint n_found = 0;
+  for(uint i=0; i<HEAP_NUM_BLOCK; i++) {
     if(heap[i].used) {
       debug_putstr("heap: block %u is in use (%u)\n", i, heap[i].used);
       n_found = 0;
@@ -60,7 +58,7 @@ static void* heap_alloc(size_t size)
       if(n_found >= n_alloc) {
         uint bi = (i+1-n_alloc)*HEAP_BLOCK_SIZE;
         void* addr = (void*)HEAPADDR + bi;
-        for(j=i+1-n_alloc; j<=i; j++) {
+        for(uint j=i+1-n_alloc; j<=i; j++) {
           heap[j].ptr = addr;
           heap[j].used = 1;
         }
@@ -78,12 +76,11 @@ static void* heap_alloc(size_t size)
 // Free memory in heap
 static void heap_free(const void* ptr)
 {
-  uint i;
-  if(ptr != 0) {
-    for(i=0; i<HEAP_NUM_BLOCK; i++) {
+  if(ptr != NULL) {
+    for(uint i=0; i<HEAP_NUM_BLOCK; i++) {
       if(heap[i].ptr == ptr && heap[i].used) {
         heap[i].used = 0;
-        heap[i].ptr = 0;
+        heap[i].ptr = NULL;
       }
     }
   }
@@ -119,7 +116,7 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_IO_OUT_CHAR_ATTR: {
-      TSYSCALL_POSATTR* pc = param;
+      syscall_posattr_t* pc = param;
       io_vga_putc_attr(pc->x, pc->y, pc->c, pc->attr);
       return 0;
     }
@@ -130,13 +127,13 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_IO_SET_CURSOR_POS: {
-      TSYSCALL_POSITION* ps = param;
+      syscall_porition_t* ps = param;
       io_vga_setcursorpos(ps->x, ps->y);
       return 0;
     }
 
     case SYSCALL_IO_GET_CURSOR_POS: {
-      TSYSCALL_POSITION* ps = param;
+      syscall_porition_t* ps = param;
       io_vga_getcursorpos(&ps->x, &ps->y);
       return 0;
     }
@@ -147,7 +144,11 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_IO_IN_KEY: {
-      return io_getkey();
+      const uint wait_mode = 
+        *(uint*)param == GETKEY_WAITMODE_WAIT ?
+          IO_GETKEY_WAITMODE_WAIT :
+          IO_GETKEY_WAITMODE_NOWAIT;
+      return io_getkey(wait_mode);
     }
 
     case SYSCALL_IO_OUT_CHAR_SERIAL:
@@ -157,18 +158,17 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_GET_INFO: {
-      TSYSCALL_FSINFO* fi = param;
+      syscall_fsinfo_t* fi = param;
       return fs_get_info(fi->disk_index, fi->info);
     }
 
     case SYSCALL_FS_GET_ENTRY: {
-      TSYSCALL_FSENTRY* fi = param;
-      SFS_ENTRY entry;
-      FS_ENTRY o_entry;
-      char path[MAX_PATH];
-      uint result;
+      syscall_fsentry_t* fi = param;
+      sfs_entry_t entry;
+      fs_entry_t o_entry;
+      char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
-      result = fs_get_entry(&entry, path, fi->parent, fi->disk);
+      uint result = fs_get_entry(&entry, path, fi->parent, fi->disk);
       memcpy(o_entry.name, entry.name, sizeof(o_entry.name));
       o_entry.flags = entry.flags;
       o_entry.size = entry.size;
@@ -177,57 +177,56 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_READ_FILE: {
-      TSYSCALL_FSRWFILE* fi = param;
-      char path[MAX_PATH];
+      syscall_fsrwfile_t* fi = param;
+      char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
       return fs_read_file(fi->buff, path, fi->offset, fi->count);
     }
 
     case SYSCALL_FS_WRITE_FILE: {
-      TSYSCALL_FSRWFILE* fi = param;
-      char path[MAX_PATH];
+      syscall_fsrwfile_t* fi = param;
+      char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
       return fs_write_file(fi->buff, path, fi->offset, fi->count, fi->flags);
     }
 
     case SYSCALL_FS_MOVE: {
-      TSYSCALL_FSSRCDST* fi = param;
-      char src[MAX_PATH];
-      char dst[MAX_PATH];
+      syscall_fssrcdst_t* fi = param;
+      char src[MAX_PATH] = {0};
+      char dst[MAX_PATH] = {0};
       memcpy(src, fi->src, sizeof(src));
       memcpy(dst, fi->dst, sizeof(dst));
       return fs_move(src, dst);
     }
 
     case SYSCALL_FS_COPY: {
-      TSYSCALL_FSSRCDST* fi = param;
-      char src[MAX_PATH];
-      char dst[MAX_PATH];
+      syscall_fssrcdst_t* fi = param;
+      char src[MAX_PATH] = {0};
+      char dst[MAX_PATH] = {0};
       memcpy(src, fi->src, sizeof(src));
       memcpy(dst, fi->dst, sizeof(dst));
       return fs_copy(src, dst);
     }
 
     case SYSCALL_FS_DELETE: {
-      char path[MAX_PATH];
+      char path[MAX_PATH] = {0};
       memcpy(path, param, sizeof(path));
       return fs_delete(path);
     }
 
     case SYSCALL_FS_CREATE_DIRECTORY: {
-      char path[MAX_PATH];
+      char path[MAX_PATH] = {0};
       memcpy(path, param, sizeof(path));
       return fs_create_directory(path);
     }
 
     case SYSCALL_FS_LIST: {
-      TSYSCALL_FSLIST* fi = param;
-      SFS_ENTRY entry;
-      FS_ENTRY o_entry;
-      char path[MAX_PATH];
-      uint result;
+      syscall_fslist_t* fi = param;
+      sfs_entry_t entry;
+      fs_entry_t o_entry;
+      char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
-      result = fs_list(&entry, path, fi->n);
+      uint result = fs_list(&entry, path, fi->n);
       memcpy(o_entry.name, entry.name, sizeof(o_entry.name));
       o_entry.flags = entry.flags;
       o_entry.size = entry.size;
@@ -246,6 +245,23 @@ uint kernel_service(uint service, void* param)
 
     case SYSCALL_TIMER_GET: {
       return io_gettimer();
+    }
+
+    case SYSCALL_NET_RECV: {
+      syscall_netop_t* no = param;
+      return net_recv(no->addr, no->buff, no->size);
+    }
+
+    case SYSCALL_NET_SEND: {
+      syscall_netop_t* no = param;
+      uint result = net_send(no->addr, no->buff, no->size);
+      return result;
+    }
+
+    case SYSCALL_NET_PORT: {
+      uint16_t* port = (uint16_t*)param;
+      net_recv_set_port(*port);
+      return 0;
     }
   };
 
@@ -276,6 +292,15 @@ void kernel()
   // Print current disk
   debug_putstr("system disk: %2x\n",
     system_disk);
+
+  // Initialize PCI
+  pci_init();
+
+  // Initialize network
+  net_init();
+
+  // Execute config file
+  cli_exec_file("config.ini");
 
   // Show starting message
   putstr("Starting...\n");

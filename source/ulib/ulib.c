@@ -76,14 +76,12 @@ size_t strncat(char* dst, const char* src, size_t n)
 // Tokenize string
 char* strtok(char* src, char** next, char delim)
 {
-  char* s;
-
   while(*src == delim) {
     *src = 0;
     src++;
   }
 
-  s = src;
+  char* s = src;
 
   while(*s) {
     if(*s == delim) {
@@ -111,6 +109,28 @@ size_t strchr(const char* str, char c)
   return 0;
 }
 
+// Parse string uint
+uint stou(char* src)
+{
+  uint base = 10;
+  uint value = 0;
+
+  // Is hex?
+  if(src[0]=='0' && src[1]=='x') {
+    src += 2;
+    base = 16;
+  }
+
+  while(*src) {
+    uint digit = *src<='9'? *src-'0' :
+      *src>='a'? 0xA+*src-'a' : 0xA+*src-'A';
+
+    value = value*base + digit;
+    src++;
+  }
+  return value;
+}
+
  // Set n bytes from dst to c
 void* memset(void* dst, int c, size_t n)
 {
@@ -123,15 +143,28 @@ size_t memcpy(void* dst, const void* src, uint n)
 {
   uint8_t* vdst = dst;
   const uint8_t* vsrc = src;
+  const uint rdir = (src>dst)?0:1;
 
   size_t i = 0;
-  uint rdir = (src>dst)?0:1;
-
   for(i=0; i<n; i++) {
-    size_t c = rdir?n-(i+1):i;
+    const size_t c = rdir?n-(i+1):i;
     vdst[c] = vsrc[c];
   }
   return i;
+}
+
+// Compare n bytes from mem1 and mem2
+size_t memcmp(const void* mem1, const void* mem2, size_t n)
+{
+  const uint8_t* vmem1 = mem1;
+  const uint8_t* vmem2 = mem2;
+
+  for(size_t i=0; i<n; i++) {
+    if(vmem1[i] != vmem2[i]) {
+      return vmem1[i]-vmem2[i];
+    }
+  }
+  return 0;
 }
 
 // Allocate memory
@@ -242,6 +275,25 @@ static void formatstr_putf(const char* format, uint* args, putcharf_t putchar)
   }
 }
 
+// Format a string (auxiliar elements)
+static char* ststr;
+static size_t ststr_size;
+static void stcatchar(char c)
+{ 
+  ststr[min(strlen(ststr), ststr_size-1)] = c;
+}
+// Format a string
+void formatstr(char* str, size_t size, char* format, ...)
+{
+  ststr = str;
+  ststr_size = size;
+  memset(ststr, 0, size);
+  formatstr_putf(format, (uint*)&format+1, 
+    *(putcharf_t*)&stcatchar);
+
+  ststr[min(strlen(ststr), size-1)] = 0;
+}
+
 // Put char serial port
 static void serial_puc(char c)
 {
@@ -280,7 +332,7 @@ void putc(char c)
 // Put char in screen
 void putc_attr(uint col, uint row, char c, uint8_t attr)
 {
-  TSYSCALL_POSATTR ca;
+  syscall_posattr_t ca = {0};
   ca.x = col;
   ca.y = row;
   ca.c = c;
@@ -299,7 +351,7 @@ void putstr(const char* format, ...)
 // Get cursor position
 void get_cursor_pos(uint* col, uint* row)
 {
-  TSYSCALL_POSITION p = {0};
+  syscall_porition_t p = {0};
   syscall(SYSCALL_IO_GET_CURSOR_POS, &p);
   *col = p.x;
   *row = p.y;
@@ -308,7 +360,7 @@ void get_cursor_pos(uint* col, uint* row)
 // Set cursor position
 void set_cursor_pos(uint col, uint row)
 {
-  TSYSCALL_POSITION p;
+  syscall_porition_t p = {0};
   p.x = col;
   p.y = row;
   syscall(SYSCALL_IO_SET_CURSOR_POS, &p);
@@ -320,10 +372,10 @@ void set_show_cursor(uint show)
   syscall(SYSCALL_IO_SET_SHOW_CURSOR, &show);
 }
 
-// Get pressed key. Wait until a key is pressed
-uint getkey()
+// Get pressed key
+uint getkey(uint mode)
 {
-  return syscall(SYSCALL_IO_IN_KEY, 0);
+  return syscall(SYSCALL_IO_IN_KEY, &mode);
 }
 
 // Get a string from user. Returns when RETURN key is
@@ -331,14 +383,12 @@ uint getkey()
 // Returns number of elements in str
 int getstr(char* str, size_t n)
 {
-  uint col, row;
+  uint col=0, row=0;
   uint i = 0;
   uint k = 0;
 
   // Reset string
   memset(str, 0, n);
-
-  // TODO: Clear keyboard buffer
 
   // Get cursor position and show it
   get_cursor_pos(&col, &row);
@@ -346,7 +396,7 @@ int getstr(char* str, size_t n)
 
   do {
     // Get a key press
-    k = getkey();
+    k = getkey(GETKEY_WAITMODE_WAIT);
 
     if(k==0){
       continue;
@@ -384,7 +434,7 @@ int getstr(char* str, size_t n)
       continue;
 
     // Append char to string
-  } else if(strlen(str) < n-1 && (k & 0xFF)) {
+    } else if(strlen(str) < n-1 && (k & 0xFF)) {
         memcpy(&str[i+1], &str[i], n-i-2);
         str[i++] = (k & 0xFF);
     }
@@ -409,18 +459,18 @@ int getstr(char* str, size_t n)
 }
 
 // Get filesystem info
-uint get_fsinfo(uint disk_index, FS_INFO* info)
+uint get_fsinfo(uint disk_index, fs_info_t* info)
 {
-  TSYSCALL_FSINFO fi;
+  syscall_fsinfo_t fi = {0};
   fi.disk_index = disk_index;
   fi.info = info;
   return syscall(SYSCALL_FS_GET_INFO, &fi);
 }
 
 // Get filesystem entry
-uint get_entry(FS_ENTRY* entry, char* path, uint parent, uint disk)
+uint get_entry(fs_entry_t* entry, char* path, uint parent, uint disk)
 {
-  TSYSCALL_FSENTRY fi;
+  syscall_fsentry_t fi = {0};
   fi.entry = entry;
   fi.path = path;
   fi.parent = parent;
@@ -431,7 +481,7 @@ uint get_entry(FS_ENTRY* entry, char* path, uint parent, uint disk)
 // Read file
 uint read_file(void* buff, char* path, uint offset, uint count)
 {
-  TSYSCALL_FSRWFILE fi;
+  syscall_fsrwfile_t fi = {0};
   fi.buff = buff;
   fi.path = path;
   fi.offset = offset;
@@ -443,7 +493,7 @@ uint read_file(void* buff, char* path, uint offset, uint count)
 // Write file
 uint write_file(void* buff, char* path, uint offset, uint count, uint flags)
 {
-  TSYSCALL_FSRWFILE fi;
+  syscall_fsrwfile_t fi = {0};
   fi.buff = buff;
   fi.path = path;
   fi.offset = offset;
@@ -455,7 +505,7 @@ uint write_file(void* buff, char* path, uint offset, uint count, uint flags)
 // Move entry
 uint move(char* srcpath, char* dstpath)
 {
-  TSYSCALL_FSSRCDST fi;
+  syscall_fssrcdst_t fi = {0};
   fi.src = srcpath;
   fi.dst = dstpath;
   return syscall(SYSCALL_FS_MOVE, &fi);
@@ -464,7 +514,7 @@ uint move(char* srcpath, char* dstpath)
 // Copy entry
 uint copy(char* srcpath, char* dstpath)
 {
-  TSYSCALL_FSSRCDST fi;
+  syscall_fssrcdst_t fi = {0};
   fi.src = srcpath;
   fi.dst = dstpath;
   return syscall(SYSCALL_FS_COPY, &fi);
@@ -483,9 +533,9 @@ uint create_directory(char* path)
 }
 
 // List dir entries
-uint list(FS_ENTRY* entry, char* path, uint n)
+uint list(fs_entry_t* entry, char* path, uint n)
 {
-  TSYSCALL_FSLIST fi;
+  syscall_fslist_t fi = {0};
   fi.entry = entry;
   fi.path = path;
   fi.n = n;
@@ -508,4 +558,69 @@ void get_datetime(time_t* t)
 uint get_timer()
 {
   return syscall(SYSCALL_TIMER_GET, 0);
+}
+
+// Wait a number of miliseconds
+void wait(uint ms)
+{
+  const uint start_time = get_timer();
+  const uint finish_time = start_time+ms;
+  while(get_timer() < finish_time) {
+    __asm__ __volatile__("nop");
+  }
+}
+
+// Convert string to IP
+void str_to_ip(uint8_t* ip, const char* str)
+{
+  uint i = 0;
+  char tok_str[24] = {0};
+  char* tok = tok_str;
+  char* nexttok = tok;
+  strncpy(tok_str, str, sizeof(tok_str));
+
+  // Tokenize
+  while(*tok && *nexttok && i<4) {
+    tok = strtok(tok, &nexttok, '.');
+    if(*tok) {
+      ip[i++] = stou(tok);
+   }
+   tok = nexttok;
+  }
+}
+
+// Convert IP to string
+char* ip_to_str(char* str, uint8_t* ip)
+{
+  formatstr(str, 16, "%u.%u.%u.%u", 
+    ip[0], ip[1], ip[2], ip[3]);
+  return str;
+}
+
+// Get and remove from buffer received data.
+// src and buff are filled by the function
+uint recv(net_address_t* src, uint8_t* buff, size_t buff_size)
+{
+  syscall_netop_t no = {0};
+  no.addr = src;
+  no.buff = buff;
+  no.size = buff_size;
+  return syscall(SYSCALL_NET_RECV, &no);
+}
+
+// Send buffer to dst
+uint send(net_address_t* dst, uint8_t* buff, size_t len)
+{
+  syscall_netop_t no = {0};
+  no.addr = dst;
+  no.buff = buff;
+  no.size = len;
+  return syscall(SYSCALL_NET_SEND, &no);
+}
+
+// Set reception to this port
+// Must be set once before calling recv
+void recv_set_port(uint16_t port)
+{
+  syscall(SYSCALL_NET_PORT, &port);
 }

@@ -8,6 +8,8 @@ System requirements:
 * 1.44Mb disk
 * VGA graphics card
 
+Realtek 8029AS network card is supported.
+
 Developer notes:
 This software is a hobby operating system. Creator makes no warranty for its use and assumes no responsibility for any errors which may appear in this document.
 
@@ -87,7 +89,9 @@ The tree contains the following directories:
 ## Testing
 After building, run `make qemu` (linux) or `qemu.bat` (windows) from the root directory to test the operating system in qemu. Other virtual machines have been successfully tested. To test the system using VirtualBox, create a new `Other/DOS` machine and start it with `images/os_fd.img` as floppy image.
 
-The operating system outputs debug information through the first serial port in real time. This can be useful for system and user application developers. This serial port is configured to work at 2400 bauds, 8 data bits, odd parity and 1 stop bit.
+The network support has been only tested in qemu under Windows, using the Tap-windows driver provided [here](https://openvpn.net/index.php/download/community-downloads.html). This virtual device must be renamed to `tap` and bridged to the actual nic in order to make the default `qemu.bat` script work as expected.
+
+The operating system outputs debug information through the first serial port in real time. This can be useful for developers. This serial port is configured to work at 2400 bauds, 8 data bits, odd parity and 1 stop bit.
 
 Using the provided qemu scripts, the serial port is automatically mapped to the process standard input/output. For VirtualBox users, it is possible for example to telnet from putty if COM1 is set to TCP mode without a pipe, and the same port is specified in both programs.
 
@@ -153,6 +157,17 @@ clone hd0
 
 #### CLS
 Clear the screen.
+
+#### CONFIG
+Show, set or save configuration parameter values. To show current values, call it without arguments. To set values, two parameters are expected: the parameter name to set, and its value. To save configuration to file, use `save` parameter. Saved configuration will be automatically read when the system starts.
+
+Example:
+```
+config
+config save
+config net_IP 192.168.0.20
+config net_gate 192.168.0.1
+```
 
 #### COPY
 Copy files. Two parameters are expected: the path of the file to copy, and the path of the new copy.
@@ -230,7 +245,7 @@ The easiest way develop new user programs is thorugh corss development:
 
     uint main(int argc, char* argv[])
     {
-     return 0;
+      return 0;
     }
     ```
 3. Edit this line of `source/Makefile` and add `$(PROGDIR)programname.bin` at the end, like this:

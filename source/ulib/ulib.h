@@ -1,10 +1,11 @@
 // User library
 
-#ifndef _KLIB_H
-#define _KLIB_H
+#ifndef _ULIB_H
+#define _ULIB_H
 
 #define min(a,b) (a<b?a:b)
 #define max(a,b) (a>b?a:b)
+#define NULL (0)
 
 // System call
 // Avoid using it since there are already implemented
@@ -14,6 +15,7 @@ uint syscall(uint service, void* param);
 // Memory
 void* memset(void* dst, int c, size_t n);
 size_t memcpy(void* dst, const void* src, size_t n);
+size_t memcmp(const void* mem1, const void* mem2, size_t n);
 
 // String management
 size_t strcmp(const char* str1, const char* str2);
@@ -37,7 +39,13 @@ char* strtok(char* src, char** next, char delim);
 //
 // To tokenize a full string, this function should be called several times,
 // until *next = 0
-//
+
+// Parse string uint
+uint stou(char* src);
+
+// Format a string using %x, %d, %u, %U, %s...
+void formatstr(char* str, size_t size, char* format, ...);
+
 
 // Allocate size bytes of memory
 void* malloc(size_t size);
@@ -93,7 +101,11 @@ void set_show_cursor(uint show);
 #define KEY_F11       0xFB
 #define KEY_F12       0xFC
 
-uint getkey();
+enum GETKEY_WAITMODE{
+  GETKEY_WAITMODE_NOWAIT = 0, // Return 0 if no key pressed
+  GETKEY_WAITMODE_WAIT        // Wait for key pressed
+};
+uint getkey(uint wait_mode); // See GETKEY_WAITMODE enum
 int getstr(char* str, size_t n);
 // getstr: Get a string from user. Returns when RETURN key is
 // pressed. Unused str characters are set to 0.
@@ -156,10 +168,14 @@ void debug_putstr(const char* format, ...);
 
 
 // Get current system date and time
+
 void get_datetime(time_t* t);
 
 // Get current system timer (miliseconds)
 uint get_timer();
+
+// Wait a number of miliseconds
+void wait(uint ms);
 
 
 // File system related
@@ -196,7 +212,7 @@ uint get_timer();
 #define ERROR_NO_SPACE  0xFFFC
 #define ERROR_ANY       0xFFFB
 
-// FS_ENTRY flags
+// fs_entry_t flags
 #define FST_DIR  0x01   // Directory
 #define FST_FILE 0x02   // File
 
@@ -204,11 +220,11 @@ typedef struct {
   char    name[15];
   uint8_t flags;
   uint    size; // bytes for files, items for directories
-} FS_ENTRY;
+} fs_entry_t;
 
 #define MAX_PATH 72
 
-// FS_INFO.fs_type types
+// fs_info_t.fs_type types
 #define FS_TYPE_UNKNOWN 0x000
 #define FS_TYPE_NSFS    0x001
 
@@ -218,7 +234,7 @@ typedef struct {
   uint  fs_type;
   uint  fs_size;   // MB
   uint  disk_size; // MB
-} FS_INFO;
+} fs_info_t;
 
 
 // Get filesystem info
@@ -226,7 +242,7 @@ typedef struct {
 // disk_index is referred to the index of a disk on the currently
 // available disks list.
 // returns number of available disks
-uint get_fsinfo(uint disk_index, FS_INFO* info);
+uint get_fsinfo(uint disk_index, fs_info_t* info);
 
 
 // Get filesystem entry
@@ -238,7 +254,7 @@ uint get_fsinfo(uint disk_index, FS_INFO* info);
 // - relative to parent if parent index entry or disk id are provided
 // Returns ERROR_NOT_FOUND if error, entry index otherwise
 #define UNKNOWN_VALUE 0xFFFFFFFF
-uint get_entry(FS_ENTRY* entry, char* path, uint parent, uint disk);
+uint get_entry(fs_entry_t* entry, char* path, uint parent, uint disk);
 
 
 // Read file
@@ -276,13 +292,11 @@ uint move(char* srcpath, char* dstpath);
 // - another value otherwise
 uint copy(char* srcpath, char* dstpath);
 
-/*
- * Delete entry
- * In the case of directories, they are recursively deleted
- * Returns:
- * - ERROR_NOT_FOUND if path does not exist
- * - index of deleted entry otherwise
- */
+// Delete entry
+// In the case of directories, they are recursively deleted
+// Returns:
+// - ERROR_NOT_FOUND if path does not exist
+// - index of deleted entry otherwise
 uint delete(char* path);
 
 
@@ -300,14 +314,56 @@ uint create_directory(char* path);
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - number of elements in ths directory otherwise
-uint list(FS_ENTRY* entry, char* path, uint n);
+uint list(fs_entry_t* entry, char* path, uint n);
 
 
 // Create filesystem in disk
 // Deletes all files, creates NSFS filesystem
-// and adds a copy of the kernel
+// and adds a copy of the kernel.
 // Returns 0 on success
 uint format(uint disk);
 
 
-#endif // _KLIB_H
+
+// About IP format
+// Unless something different is specified:
+// uint8_t* ip  are arrays of 4 bytes with a parsed IP
+// char* ip     are strings containing an unparsed IP
+#define IP_LEN 4
+typedef struct {
+  uint8_t  ip[IP_LEN];
+  uint16_t port;
+} net_address_t;
+
+// Convert string to IP
+void str_to_ip(uint8_t* ip, const char* str);
+
+// Convert IP to string
+char* ip_to_str(char* str, uint8_t* ip);
+
+// Send len bytes of buff to dst through network
+// Uses UDP protocol. Reception not guaranteed
+// (uses UDP port 8086 for source)
+// Returns 0 on success
+uint send(net_address_t* dst, uint8_t* buff, size_t len);
+
+// Get and remove received data from the network reception buffer.
+// src and buff are filled by the function.
+// If more than buff_size bytes were received,
+// these will be lost.
+// Returns number of bytes of buff that have been filled
+// or 0 if nothing received.
+// When the reception buffer is full, all new received packets
+// are discarded. So, recv must be called frequently
+// Call recv_set_port once before start calling to this 
+// function to enable a reception port.
+// Uses UDP protocol
+uint recv(net_address_t* src, uint8_t* buff, size_t buff_size);
+
+// Enable reception in this port and disable all others.
+// Must be called once before start calling recv.
+// Specify a UDP port as parameter
+void recv_set_port(uint16_t port);
+
+
+#endif // _ULIB_H

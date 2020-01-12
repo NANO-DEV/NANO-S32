@@ -6,7 +6,9 @@ SOURCEDIR := source/
 FSTOOLSDIR := fstools/
 
 # User files and args for mkfs
-USERFILES := $(SOURCEDIR)programs/test.bin $(SOURCEDIR)programs/edit.bin $(SOURCEDIR)programs/nas.bin $(SOURCEDIR)programs/sample.s
+USERFILES := $(SOURCEDIR)programs/test.bin $(SOURCEDIR)programs/edit.bin \
+	$(SOURCEDIR)programs/nas.bin $(SOURCEDIR)programs/sample.s \
+	$(SOURCEDIR)programs/unet.bin
 MKFSARGS := $(SOURCEDIR)boot/boot.bin $(SOURCEDIR)kernel.n32 $(USERFILES)
 
 # Make source and create images
@@ -41,5 +43,6 @@ clean:
 	rm -f tags
 	rm -f $(IMAGEDIR)os-fd.img $(IMAGEDIR)os-hd.img
 	$(MAKE) $@ -C $(SOURCEDIR) --no-print-directory
+	@find . -name "*.dat" -type f -delete
 
 .PHONY: all ctags qemu clean

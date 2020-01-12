@@ -27,30 +27,33 @@
 #define SYSCALL_FS_FORMAT               0x0069
 #define SYSCALL_DATETIME_GET            0x0070
 #define SYSCALL_TIMER_GET               0x0071
+#define SYSCALL_NET_RECV                0x0080
+#define SYSCALL_NET_SEND                0x0081
+#define SYSCALL_NET_PORT                0x0082
 
 typedef struct {
   uint x;
   uint y;
-} TSYSCALL_POSITION;
+} syscall_porition_t;
 
 typedef struct {
   uint x;
   uint y;
   char c;
   uint attr;
-} TSYSCALL_POSATTR;
+} syscall_posattr_t;
 
 typedef struct {
   uint               disk_index;
-  FS_INFO*           info;
-} TSYSCALL_FSINFO;
+  fs_info_t*           info;
+} syscall_fsinfo_t;
 
 typedef struct {
-  FS_ENTRY*          entry;
+  fs_entry_t*          entry;
   char*              path;
   uint               parent;
   uint               disk;
-} TSYSCALL_FSENTRY;
+} syscall_fsentry_t;
 
 typedef struct {
   void*              buff;
@@ -58,17 +61,23 @@ typedef struct {
   uint               offset;
   uint               count;
   uint               flags;
-} TSYSCALL_FSRWFILE;
+} syscall_fsrwfile_t;
 
 typedef struct {
   char*              src;
   char*              dst;
-} TSYSCALL_FSSRCDST;
+} syscall_fssrcdst_t;
 
 typedef struct {
-  FS_ENTRY*          entry;
+  fs_entry_t*          entry;
   char*              path;
   uint               n;
-} TSYSCALL_FSLIST;
+} syscall_fslist_t;
+
+typedef struct {
+  net_address_t*       addr;
+  uint8_t*           buff;
+  size_t             size;
+} syscall_netop_t;
 
 #endif // _SYSCALL_H

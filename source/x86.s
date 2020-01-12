@@ -31,18 +31,18 @@ dump_regs:
 extern debug_putstr
 
 struc regs16_t
-  .di	resw 1
-  .si	resw 1
-  .bp	resw 1
+  .di resw 1
+  .si resw 1
+  .bp resw 1
   .sp resw 1
-  .bx	resw 1
-  .dx	resw 1
-  .cx	resw 1
-  .ax	resw 1
-  .gs	resw 1
-  .fs	resw 1
-  .es	resw 1
-  .ds	resw 1
+  .bx resw 1
+  .dx resw 1
+  .cx resw 1
+  .ax resw 1
+  .gs resw 1
+  .fs resw 1
+  .es resw 1
+  .ds resw 1
   .ef resw 1
 endstruc
 
@@ -51,10 +51,10 @@ k16_stack:
 k16_stack_top:
 
 %define GDTENTRY(x)                     ((x) << 3)
-%define CODE32                          GDTENTRY(1)	; 0x08
-%define DATA32                          GDTENTRY(2)	; 0x10
-%define CODE16                          GDTENTRY(3)	; 0x18
-%define DATA16                          GDTENTRY(4)	; 0x20
+%define CODE32                          GDTENTRY(1) ; 0x08
+%define DATA32                          GDTENTRY(2) ; 0x10
+%define CODE16                          GDTENTRY(3) ; 0x18
+%define DATA16                          GDTENTRY(4) ; 0x20
 
 ; int32 call makes its POSSIBLE to execute BIOS interrupts
 ; by temporally switching to real mode
@@ -63,7 +63,7 @@ k16_stack_top:
 ; License: http://creativecommons.org/licenses/by-sa/2.0/uk/
 ;
 ; Notes: int32() resets all selectors
-;	void _cdelc int32(uint8_t intnum, regs16_t* regs);
+; void _cdelc int32(uint8_t intnum, regs16_t* regs);
 ;
 
 extern lapic_inhibit, lapic_deinhibit
@@ -162,8 +162,11 @@ idt16_ptr:                               ; IDT table pointer for 16bit access
   dw 0x03FF                              ; table limit (size)
   dd 0x00000000                          ; table base address
 
+global idtr
 idtr:
   dw (64*8)-1
+global pidt
+pidt:
   dd idt
 
 idt:
@@ -174,7 +177,6 @@ idt:
 extern timer_handler
 IRQ0_wrapper:
   pushad
-  cld
   call timer_handler
   popad
   iret
@@ -182,8 +184,15 @@ IRQ0_wrapper:
 extern spurious_handler
 IRQ31_wrapper:
   pushad
-  cld
   call spurious_handler
+  popad
+  iret
+
+extern net_handler
+global IRQNET_wrapper
+IRQNET_wrapper:
+  pushad
+  call net_handler
   popad
   iret
 

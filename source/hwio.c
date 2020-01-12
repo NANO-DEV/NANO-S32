@@ -1,4 +1,4 @@
-// Basic IO
+// Hardware and basic IO
 
 #include "types.h"
 #include "x86.h"
@@ -119,16 +119,15 @@ static uint8_t kb_get()
   static const uint8_t* charcode[4] = {
     normalmap, shiftmap, ctlmap, ctlmap
   };
-  uint8_t st, data, c;
 
   // Check if there is data available
-  st = inb(KB_PORT_STATUS);
+  uint8_t st = inb(KB_PORT_STATUS);
   if((st & KB_DATA_IN_BUFF) == 0) {
     return 0;
   }
 
   // Read data
-  data = inb(KB_PORT_DATA);
+  uint8_t data = inb(KB_PORT_DATA);
 
   // Skip mouse data
   if(st & 0x20) {
@@ -155,7 +154,7 @@ static uint8_t kb_get()
   // Find key in map and translate
   shift |= shiftcode[data];
   shift ^= togglecode[data];
-  c = charcode[shift & (CTL | SHIFT)][data];
+  uint8_t c = charcode[shift & (CTL | SHIFT)][data];
 
   // Handle CAPSLOCK enabled
   if(shift & CAPSLOCK) {
@@ -169,15 +168,14 @@ static uint8_t kb_get()
   return c;
 }
 
-// Wait until get key
-uint io_getkey()
+// Get key press
+uint io_getkey(uint wait_mode)
 {
   uint k = 0;
 
-  // Wait
-  while(k == 0) {
+  do {
     k = kb_get();
-  }
+  } while(k==0 && wait_mode==IO_GETKEY_WAITMODE_WAIT);
 
   return k;
 }
@@ -235,15 +233,16 @@ void io_vga_putc(char c, uint8_t attr)
   }
 
   // Get cursor position: col + width*row
-  uint pos = 0;
   outb(VGA_PORT, 14);
-  pos = inb(VGA_PORT+1) << 8;
+  uint pos = inb(VGA_PORT+1) << 8;
   outb(VGA_PORT, 15);
   pos |= inb(VGA_PORT+1);
 
   // Set char
   if(c == '\n') {
     pos += VGA_WIDTH - pos%VGA_WIDTH;
+  } else if(c == '\r') {
+    pos -= pos%VGA_WIDTH;
   } else {
     VGA_MEMORY[pos++] = (c & 0xFF) | (attr << 8);
   }
@@ -304,9 +303,8 @@ void io_vga_clear()
 // Get screen cursor position
 void io_vga_getcursorpos(uint* x, uint* y)
 {
-  uint pos = 0;
   outb(VGA_PORT, 14);
-  pos = inb(VGA_PORT+1) << 8;
+  uint pos = inb(VGA_PORT+1) << 8;
   outb(VGA_PORT, 15);
   pos |= inb(VGA_PORT+1);
 
@@ -317,7 +315,7 @@ void io_vga_getcursorpos(uint* x, uint* y)
 // Set screen cursor position
 void io_vga_setcursorpos(uint x, uint y)
 {
-  uint pos = VGA_WIDTH*y + x;
+  const uint pos = VGA_WIDTH*y + x;
   outb(VGA_PORT, 14);
   outb(VGA_PORT+1, pos>>8);
   outb(VGA_PORT, 15);
@@ -344,8 +342,8 @@ void io_vga_showcursor(uint show)
 // Convert BCD to uint
 static uint BCD_to_int(char BCD)
 {
-    uint h = (BCD >> 4) * 10;
-    return h + (BCD & 0xF);
+  const uint h = (BCD >> 4) * 10;
+  return h + (BCD & 0xF);
 }
 
 // Read CMOS register
@@ -408,6 +406,101 @@ static uint get_currentsecond()
 }
 
 
+// IRQs
+#define T_IRQ0          32   // IRQ 0 corresponds to int T_IRQ
+
+#define IRQ_TIMER        0
+#define IRQ_SPURIOUS    31
+
+#define IOAPIC  0xFEC00000   // Default physical address of IO APIC
+
+#define REG_ID     0x00  // Register index: ID
+#define REG_VER    0x01  // Register index: version
+#define REG_TABLE  0x10  // Redirection table base
+
+// The redirection table starts at REG_TABLE and uses
+// two registers to configure each interrupt.
+// The first (low) register in a pair contains configuration bits.
+// The second (high) register contains a bitmask telling which
+// CPUs can serve that interrupt.
+#define INT_DISABLED   0x00010000  // Interrupt disabled
+#define INT_LEVEL      0x00008000  // Level-triggered (vs edge-)
+#define INT_ACTIVELOW  0x00002000  // Active low (vs high)
+#define INT_LOGICAL    0x00000800  // Destination is CPU id (vs APIC ID)
+
+// IO APIC MMIO structure: write reg, then read or write data.
+struct ioapic {
+  uint reg;
+  uint pad[3];
+  uint data;
+};
+
+volatile struct ioapic *ioapic = NULL;
+
+static uint ioapicread(int reg)
+{
+  ioapic->reg = reg;
+  return ioapic->data;
+}
+
+static void ioapicwrite(int reg, uint data)
+{
+  ioapic->reg = reg;
+  ioapic->data = data;
+}
+
+// Init IO-APIC
+static void ioapicinit()
+{
+  ioapic = (volatile struct ioapic*)IOAPIC;
+  const uint maxintr = (ioapicread(REG_VER) >> 16) & 0xFF;
+
+  // Mark all interrupts edge-triggered, active high, disabled,
+  // and not routed to any CPUs
+  for(uint i = 0; i <= maxintr; i++) {
+    ioapicwrite(REG_TABLE+2*i, INT_DISABLED | (T_IRQ0 + i));
+    ioapicwrite(REG_TABLE+2*i+1, 0);
+  }
+}
+
+// Enable IO-APIC IRQ
+static void ioapic_enable(int irq)
+{
+  // Mark interrupt edge-triggered, active high,
+  // enabled, and routed to the cpu 0
+  ioapicwrite(REG_TABLE+2*irq, T_IRQ0 + irq);
+  ioapicwrite(REG_TABLE+2*irq+1, 0);
+}
+
+struct IDT_entry {
+  uint16_t offset_lowerbits;
+  uint16_t selector;
+  uint8_t  zero;
+  uint8_t  type_attr;
+  uint16_t offset_higherbits;
+};
+
+extern void* idtr;
+extern uint32_t pidt;
+void IRQNET_wrapper();
+
+// Set network IRQ handler
+void set_network_IRQ(uint irq)
+{
+  struct IDT_entry* volatile pIDT = (struct IDT_entry*)pidt;
+
+  pIDT[T_IRQ0+irq].offset_lowerbits = (uint32_t)IRQNET_wrapper & 0xFFFF;
+  pIDT[T_IRQ0+irq].selector = 0x08; // KERNEL_CODE_SEGMENT_OFFSET
+  pIDT[T_IRQ0+irq].zero = 0;
+  pIDT[T_IRQ0+irq].type_attr = 0x8F; // INTERRUPT_GATE
+  pIDT[T_IRQ0+irq].offset_higherbits = ((uint32_t)IRQNET_wrapper & 0xFFFF0000) >> 16;
+
+  __asm__("lidt (%0)" : : "m" (idtr));
+
+  ioapic_enable(irq);
+}
+
+
 // APIC related
 #define IA32_APIC_BASE_MSR 0x1B
 
@@ -442,13 +535,7 @@ static uint get_currentsecond()
 #define TCCR    (0x0390/4)   // Timer Current Count
 #define TDCR    (0x03E0/4)   // Timer Divide Configuration
 
-// IRQs
-#define T_IRQ0          32      // IRQ 0 corresponds to int T_IRQ
-
-#define IRQ_TIMER        0
-#define IRQ_SPURIOUS    31
-
-static volatile uint32_t* lapic;
+static volatile uint32_t* lapic = NULL;
 static void lapicw(uint index, uint value)
 {
   lapic[index] = value;
@@ -464,7 +551,7 @@ void lapic_init()
 {
   __asm__("cli");
 
-  uint32_t eax, edx;
+  uint32_t eax=0, edx=0;
   read_MSR(IA32_APIC_BASE_MSR, &eax, &edx);
 
   lapic = (void*)(eax & 0xFFFFF000);
@@ -494,6 +581,7 @@ void lapic_init()
   // Enable interrupts on the APIC
   lapicw(TPR, 0x0);
 
+  ioapicinit();
   __asm__("sti");
 }
 
@@ -509,11 +597,18 @@ void lapic_deinhibit()
     lapicw(TPR, 0x00);
 }
 
+// Acknowledge interrupt
+void lapic_eoi()
+{
+  if(lapic) {
+    lapicw(EOI, 0);
+  }
+}
+
 // Spurious handler
 void spurious_handler()
 {
-  // Acknowledge
-  lapicw(EOI, 0);
+  lapic_eoi();
 }
 
 // Timer handler
@@ -545,7 +640,7 @@ void timer_handler()
   }
 
   // Acknowledge
-  lapicw(EOI, 0);
+  lapic_eoi();
 }
 
 // Get system miliseconds
@@ -562,8 +657,7 @@ extern uint8_t system_hwdisk; // System disk hardware ID
 // Disk id to disk index
 static uint hwdisk_to_disk(uint hwdisk)
 {
-  uint index;
-  for(index=0; index<MAX_DISK; index++) {
+  for(uint index=0; index<MAX_DISK; index++) {
     if(disk_info[index].id == hwdisk) {
       return index;
     }
@@ -584,7 +678,7 @@ static uint disk_to_hwdisk(uint index)
 // Return 0 on success
 static uint disk_reset(uint hwdisk)
 {
-  regs16_t regs;
+  regs16_t regs = {0};
 
   memset(&regs, 0, sizeof(regs));
   regs.ax = 0;
@@ -604,7 +698,7 @@ typedef struct {
 // Return 0 on success
 static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
 {
-  regs16_t regs;
+  regs16_t regs = {0};
 
   memset(&regs, 0, sizeof(regs));
   regs.ax = (0x08 << 8);
@@ -614,7 +708,7 @@ static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
   __asm__("clc");
   int32(0x13, &regs);
 
-  uint result = (regs.eflags & X86_CF);
+  const uint result = (regs.eflags & X86_CF);
   if(!result) {
 
     diskinfo->head_num = 1 + ((regs.dx & 0xFF00) >> 8);
@@ -721,7 +815,7 @@ static uint ATA_PIO_writesector(uint disk, uint sector, size_t n, const void* bu
 static uint ATA_detect(uint disk, char* model, size_t model_size )
 {
   // Send IDENTIFY command
-	outb(0x1F6, (((disk-2)&1)<<4) | 0xA0);
+  outb(0x1F6, (((disk-2)&1)<<4) | 0xA0);
   outb(0x1F7, IDE_CMD_IDENT);
 
   uint result = 0;
@@ -787,7 +881,7 @@ static uint ATA_detect(uint disk, char* model, size_t model_size )
     model[model_size-1] = 0;
   }
   debug_putstr("ATA idenfitying disk %u:_num_sectors: %u\n", disk, num_sectors);
-	return num_sectors;
+  return num_sectors;
 }
 
 // Initialize disks info
@@ -815,8 +909,8 @@ void io_disks_init_info()
     uint hwdisk = disk_info[i].id;
 
     // Try to get info
-    diskinfo_t dinfo;
-    uint result = disk_get_info(hwdisk, &dinfo);
+    diskinfo_t dinfo = {0};
+    const uint result = disk_get_info(hwdisk, &dinfo);
     disk_info[i].sectors = dinfo.sector_num;
     disk_info[i].sides = dinfo.head_num;
     disk_info[i].cylinders = dinfo.cylinder_num;
@@ -832,7 +926,7 @@ void io_disks_init_info()
 
       if(i >= 2) {
         char model[sizeof(disk_info[i].desc)] = {0};
-        uint ATA_num_sectors = ATA_detect(i, model, sizeof(model));
+        const uint ATA_num_sectors = ATA_detect(i, model, sizeof(model));
         if(ATA_num_sectors > 0) {
           disk_info[i].isATA = 1;
           disk_info[i].size = (ATA_num_sectors * DISK_SECTOR_SIZE)/(1024*1024);
@@ -870,7 +964,7 @@ typedef struct {
 
 static void lba_to_chs( uint lba, uint spt, uint nh, chs_t* chs)
 {
-  uint temp = lba / spt;
+  const uint temp = lba / spt;
   chs->sector = 1 + (lba % spt);
   chs->head = temp % nh;
   chs->cylinder = temp / nh;
@@ -884,7 +978,7 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
   // Use ATA PIO for IDE
   if(disk_info[disk].isATA) {
     while(n > 0) {
-      uint n_sectors = min(n,255);
+      const uint n_sectors = min(n,255);
       result = ATA_PIO_readsector(disk, sector, n_sectors, buff);
       n -= n_sectors;
       sector += n_sectors;
@@ -896,10 +990,10 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
 
   // Use BIOS otherwise
   } else {
-    uint hwdisk = disk_to_hwdisk(disk);
+    const uint hwdisk = disk_to_hwdisk(disk);
 
-    chs_t chs;
-    regs16_t regs;
+    chs_t chs = {0};
+    regs16_t regs = {0};
 
     // Handle DMA access 64kb boundary
     // Write sector by sector using disk buffer
@@ -954,10 +1048,6 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
 // Returns 0 on success, another value otherwise
 uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
 {
-  uint n_sectors = 0;
-  uint i = 0;
-  uint result = 0;
-
   // Check params
   if(buff == 0) {
     debug_putstr("Read disk: bad buffer\n");
@@ -973,6 +1063,9 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   sector += offset / DISK_SECTOR_SIZE;
   offset = offset % DISK_SECTOR_SIZE;
 
+  uint i = 0;
+  uint result = 0;
+
   // io_disk_read_sector can only read entire and aligned sectors.
   // If requested offset is unaligned to sectors, read an entire
   // sector and copy only requested bytes in buff
@@ -985,7 +1078,7 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   }
 
   // Now read aligned an entire sectors
-  n_sectors = size / DISK_SECTOR_SIZE;
+  uint n_sectors = size / DISK_SECTOR_SIZE;
 
   if(n_sectors && result == 0) {
     result = disk_read_sector(disk, sector, n_sectors, buff+i);
@@ -1017,7 +1110,7 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
   // Use ATA PIO for IDE
   if(disk_info[disk].isATA) {
     while(n > 0) {
-      uint n_sectors = min(n,255);
+      const uint n_sectors = min(n,255);
       result = ATA_PIO_writesector(disk, sector, n_sectors, buff);
       n -= n_sectors;
       sector += n_sectors;
@@ -1031,8 +1124,8 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
   } else {
     uint hwdisk = disk_to_hwdisk(disk);
 
-    chs_t chs;
-    regs16_t regs;
+    chs_t chs = {0};
+    regs16_t regs = {0};
 
     // Handle DMA access 64kb boundary
     // Write sector by sector using disk buffer
@@ -1088,10 +1181,6 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
 // Returns 0 on success, another value otherwise
 uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void* buff)
 {
-  uint n_sectors = 0;
-  uint i = 0;
-  uint result = 0;
-
   // Check params
   if(buff == 0) {
     debug_putstr("Write disk: bad buffer\n");
@@ -1107,6 +1196,9 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
   sector += offset / DISK_SECTOR_SIZE;
   offset = offset % DISK_SECTOR_SIZE;
 
+  uint i = 0;
+  uint result = 0;
+
   // io_disk_write_sector can only write entire and aligned sectors.
   // If requested offset is unaligned to sectors, read an entire
   // sector, overwrite requested bytes, and write it
@@ -1120,7 +1212,7 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
   }
 
   // Now write aligned an entire sectors
-  n_sectors = size / DISK_SECTOR_SIZE;
+  uint n_sectors = size / DISK_SECTOR_SIZE;
 
   if(n_sectors && result == 0) {
     result = disk_write_sector(disk, sector, n_sectors, buff+i);
@@ -1149,7 +1241,7 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
 void apm_shutdown()
 {
   // Disconnect any APM interface
-  regs16_t regs;
+  regs16_t regs = {0};
   memset(&regs, 0, sizeof(regs));
   regs.ax = 0x5304;
   regs.bx = 0;

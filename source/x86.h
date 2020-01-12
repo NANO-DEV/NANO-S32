@@ -21,8 +21,23 @@ static inline uint16_t inw(uint16_t port)
   return data;
 }
 
+// Read double from port
+static inline uint32_t ind(uint16_t port)
+{
+  uint32_t data;
+
+  __asm__ volatile("in %1,%0" : "=a"(data) : "d"(port));
+  return data;
+}
+
 // Write byte to port
 static inline void outb(uint16_t port, uint8_t data)
+{
+  __asm__ volatile("out %0,%1" : : "a"(data), "d"(port));
+}
+
+// Write double to port
+static inline void outd(uint16_t port, uint32_t data)
 {
   __asm__ volatile("out %0,%1" : : "a"(data), "d"(port));
 }

@@ -52,7 +52,7 @@ struct RDATA {
   char  name[5];
   uint  type;
   uint  encoding;
-} r_data[R_COUNT] =
+} const r_data[R_COUNT] =
 {
   {"NO",  O_ANY, 0x00},
   {"eax", O_RD,  0x00},
@@ -125,13 +125,13 @@ enum I_DEF {
 
 // CONST Instructions data
 #define I_MAX_OPS 2 // Max instruction operands
-struct IDATA {
+struct idata {
   char  mnemonic[6];
   uint  opcode;
   uint  nops;     // Number of operands
   uint  op_type[I_MAX_OPS]; // Type of operands
   uint  op_value[I_MAX_OPS]; // Restricted value
-} i_data[I_COUNT] =
+} const i_data[I_COUNT] =
 {
   {"push", 0x50, 1, {O_RD,  O_ANY},   {R_ANY, 0    }},
   {"pop",  0x58, 1, {O_RD,  O_ANY},   {R_ANY, 0    }},
@@ -195,30 +195,8 @@ struct s_ref {
   uint   symbol;
   uint   operand;
   uint   instr_id;
-  struct IDATA instruction;
+  struct idata instruction;
 } s_ref[S_MAX_REF];
-
-// Parse string uint
-uint stou(char* src)
-{
-  uint base = 10;
-  uint value = 0;
-
-  // Is hex?
-  if(src[0]=='0' && src[1]=='x') {
-    src += 2;
-    base = 16;
-  }
-
-  while(*src) {
-    uint digit = *src<='9'? *src-'0' :
-      *src>='a'? 0xA+*src-'a' : 0xA+*src-'A';
-
-    value = value*base + digit;
-    src++;
-  }
-  return value;
-}
 
 // Is string uint?
 uint sisu(char* src)
@@ -549,12 +527,9 @@ uint encode_data(uint8_t* buffer, uint offset, uint type, uint value)
 // Given a file and offset, returns a file line and offset to next line start
 static uint read_line(char* buff, uint buff_size, char* file, uint offset)
 {
-  uint i = 0;
-  uint readed = 0;
-
   // Clear buffer and read
   memset(buff, 0, buff_size);
-  readed = read_file(buff, file, offset, buff_size);
+  uint readed = read_file(buff, file, offset, buff_size);
 
   // Return on error
   if(readed >= ERROR_ANY) {
@@ -568,7 +543,7 @@ static uint read_line(char* buff, uint buff_size, char* file, uint offset)
   }
 
   // Clamp buff to a single line
-  for(i=0; i<readed; i++) {
+  for(uint i=0; i<readed; i++) {
 
     // Ignore '\r'
     if(buff[i] == '\r') {
@@ -634,8 +609,7 @@ static uint tokenize_line(char* buff, uint size, char* tokv[], uint max_tok)
 // Find or add symbol to table
 uint find_or_add_symbol(char* name)
 {
-  uint s = 0;
-  for(s=0; s<S_MAX; s++) {
+  for(uint s=0; s<S_MAX; s++) {
     if(s_table[s].name[0] == 0) {
       // Not found, so add
       strncpy(s_table[s].name, name, sizeof(s_table[s].name));
@@ -651,8 +625,7 @@ uint find_or_add_symbol(char* name)
 // Find symbol in table and return index
 uint find_symbol(char* name)
 {
-  uint s = 0;
-  for(s=0; s<S_MAX; s++) {
+  for(uint s=0; s<S_MAX; s++) {
     if(s_table[s].name[0] == 0) {
       // Not found and no more symbols
       break;
@@ -666,10 +639,9 @@ uint find_symbol(char* name)
 
 // Append a symbol reference to symbol references table
 void append_symbol_ref(uint symbol, uint operand, uint offset,
-  uint instr_id, struct IDATA* instruction)
+  uint instr_id, struct idata* instruction)
 {
-  uint r = 0;
-  for(r=0; r<S_MAX_REF; r++) {
+  for(uint r=0; r<S_MAX_REF; r++) {
     if(s_ref[r].offset == 0) {
 
       // First empty, add here
@@ -687,17 +659,16 @@ void append_symbol_ref(uint symbol, uint operand, uint offset,
 }
 
 // Find matching instruction and return id
-uint find_instruction(struct IDATA* ci)
+uint find_instruction(struct idata* ci)
 {
-  uint i, id;
-
-  for(id=0; id<I_COUNT; id++) {
+  for(uint id=0; id<I_COUNT; id++) {
     // Check same name and number of args
-    if(!strcmp(ci->mnemonic, i_data[id].mnemonic) && ci->nops==i_data[id].nops) {
+    if(!strcmp(ci->mnemonic, i_data[id].mnemonic) && 
+      ci->nops==i_data[id].nops) {
 
       // Assume match
       uint match = 1;
-      for(i=0; i<ci->nops; i++) {
+      for(uint i=0; i<ci->nops; i++) {
 
         // Unless some arg is not the same type
         if(ci->op_type[i] != i_data[id].op_type[i]) {
@@ -728,18 +699,6 @@ uint find_instruction(struct IDATA* ci)
 // Program entry point
 int main(int argc, char* argv[])
 {
-  uint i, j;
-  char ofile[14];
-
-  // Input file buffer and offset
-  char fbuff[2048];
-  uint foffset = 0;
-  uint fline = 1;
-
-  // Output buffer and offset
-  uint8_t obuff[1024];
-  uint ooffset = 0;
-
   // Check args
   if(argc != 2) {
     putstr("usage: %s <inputfile>\n", argv[0]);
@@ -747,14 +706,18 @@ int main(int argc, char* argv[])
   }
 
   // Compute output file name
+  char ofile[14] = {0};
   strncpy(ofile, argv[1], sizeof(ofile));
-  i = strchr(ofile, '.');
-  if(i) {
-    ofile[i-1] = 0;
+  uint dot = strchr(ofile, '.');
+  if(dot) {
+    ofile[dot-1] = 0;
   }
   ofile[sizeof(ofile)-strlen(".bin")-2] = 0;
   strncat(ofile, ".bin", sizeof(ofile));
 
+  // Output buffer and offset
+  uint8_t obuff[1024] = {0};
+  uint ooffset = 0;
   // Clear output buffer
   memset(obuff, 0, sizeof(obuff));
 
@@ -764,11 +727,12 @@ int main(int argc, char* argv[])
   // Clear references table
   memset(s_ref, 0, sizeof(s_ref));
 
+  // Input file buffer and offset
+  char fbuff[2048] = {0};
+  uint foffset = 0;     
   // Process input file line by line
+  uint fline = 1;
   while((foffset=read_line(fbuff, sizeof(fbuff), argv[1], foffset))!=EOF) {
-    uint  tokc;
-    char* tokv[32];
-
     // Exit on read error
     if(foffset >= ERROR_ANY) {
       putstr("Error reading input file\n");
@@ -778,7 +742,9 @@ int main(int argc, char* argv[])
     }
 
     // Tokenize line
-    tokc = tokenize_line(fbuff, sizeof(fbuff), tokv, sizeof(tokv)/sizeof(char*));
+    char* tokv[32] = {NULL};
+    const uint tokc = 
+      tokenize_line(fbuff, sizeof(fbuff), tokv, sizeof(tokv)/sizeof(char*));
 
     // Check special directives
     if(tokc==2 && !strcmp(tokv[0], "ORG")) {
@@ -789,55 +755,65 @@ int main(int argc, char* argv[])
     // Check labels
     else if(tokc==1 && tokv[0][strlen(tokv[0])-1] == ':') {
       tokv[0][strlen(tokv[0])-1] = 0;
-      j = find_or_add_symbol(tokv[0]);
-      s_table[j].value = ooffset;
-      s_table[j].type = S_LABEL;
-      debug_putstr("label %s = ORG+%x\n", s_table[j].name, s_table[j].value);
+      const uint symbol = find_or_add_symbol(tokv[0]);
+      s_table[symbol].value = ooffset;
+      s_table[symbol].type = S_LABEL;
+
+      debug_putstr("label %s = ORG+%x\n", 
+        s_table[symbol].name, s_table[symbol].value);
     }
 
     // Check memory addresses
     else if(tokc>=3 && !strcmp(tokv[1], "dd")) {
-      uint n;
-      j = find_or_add_symbol(tokv[0]);
-      s_table[j].value = ooffset;
-      s_table[j].type = S_DATAD;
-      debug_putstr("dword %s = ORG+%x : ", s_table[j].name, s_table[j].value);
-      for(n=2; n<tokc; n++) {
+      const uint symbol = find_or_add_symbol(tokv[0]);
+      s_table[symbol].value = ooffset;
+      s_table[symbol].type = S_DATAD;
+
+      debug_putstr("dword %s = ORG+%x : ", 
+        s_table[symbol].name, s_table[symbol].value);
+
+      for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset=encode_data(obuff, ooffset, s_table[j].type, stou(tokv[n]));
+        ooffset = encode_data(obuff, ooffset, 
+          s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
     }
     else if(tokc>=3 && !strcmp(tokv[1], "dw")) {
-      uint n;
-      j = find_or_add_symbol(tokv[0]);
-      s_table[j].value = ooffset;
-      s_table[j].type = S_DATAW;
-      debug_putstr("word %s = ORG+%x : ", s_table[j].name, s_table[j].value);
-      for(n=2; n<tokc; n++) {
+      const uint symbol = find_or_add_symbol(tokv[0]);
+      s_table[symbol].value = ooffset;
+      s_table[symbol].type = S_DATAW;
+
+      debug_putstr("word %s = ORG+%x : ", 
+        s_table[symbol].name, s_table[symbol].value);
+
+      for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset=encode_data(obuff, ooffset, s_table[j].type, stou(tokv[n]));
+        ooffset = encode_data(obuff, ooffset, 
+          s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
     }
     else if(tokc>=3 && !strcmp(tokv[1], "db")) {
-      uint n;
-      j = find_or_add_symbol(tokv[0]);
-      s_table[j].value = ooffset;
-      s_table[j].type = S_DATAB;
-      debug_putstr("byte %s = ORG+%x : ", s_table[j].name, s_table[j].value);
-      for(n=2; n<tokc; n++) {
+      const uint symbol = find_or_add_symbol(tokv[0]);
+      s_table[symbol].value = ooffset;
+      s_table[symbol].type = S_DATAB;
+
+      debug_putstr("byte %s = ORG+%x : ", 
+        s_table[symbol].name, s_table[symbol].value);
+
+      for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset=encode_data(obuff, ooffset, s_table[j].type, stou(tokv[n]));
+        ooffset = encode_data(obuff, ooffset, 
+          s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
     }
 
     // Check instructions
     else if(tokc) {
-      uint   s=0xFFFF, nas=0xFFFF;
-      uint   instr_id;
-      struct IDATA ci;
+      uint   symbol_id=0xFFFF, nas=0xFFFF;
+      struct idata ci;
 
       // Get instruction info
       strncpy(ci.mnemonic, tokv[0], sizeof(ci.mnemonic));
@@ -845,52 +821,53 @@ int main(int argc, char* argv[])
       ci.nops = tokc-1;
       debug_putstr("%s%6c", ci.mnemonic, ' ');
 
-      for(i=0; i<ci.nops; i++) {
+      uint op = 0;
+      for(op=0; op<ci.nops; op++) {
         uint is_pointer = 0;
-        ci.op_type[i] = O_ANY;
-        ci.op_value[i] = 0;
+        ci.op_type[op] = O_ANY;
+        ci.op_value[op] = 0;
 
-        if(tokv[i+1][0]=='[' && tokv[i+1][strlen(tokv[i+1])-1]==']') {
+        if(tokv[op+1][0]=='[' && tokv[op+1][strlen(tokv[op+1])-1]==']') {
           is_pointer = 1;
-          tokv[i+1][strlen(tokv[i+1])-1] = 0;
-          tokv[i+1]++;
+          tokv[op+1][strlen(tokv[op+1])-1] = 0;
+          tokv[op+1]++;
         }
 
         // Check registers
-        for(j=0; j<R_COUNT; j++) {
-          if(!strcmp(tokv[i+1], r_data[j].name)) {
-            ci.op_type[i] = is_pointer ? O_RMD : r_data[j].type;
-            ci.op_value[i] = j;
-            debug_putstr("%s:%s%9c", is_pointer?"pr":"r ",r_data[j].name, ' ');
+        for(uint r=0; r<R_COUNT; r++) {
+          if(!strcmp(tokv[op+1], r_data[r].name)) {
+            ci.op_type[op] = is_pointer ? O_RMD : r_data[r].type;
+            ci.op_value[op] = r;
+            debug_putstr("%s:%s%9c", is_pointer?"pr":"r ",r_data[r].name, ' ');
             break;
           }
         }
 
         // If not a register, check immediate
-        if(ci.op_type[i] == O_ANY && sisu(tokv[i+1])) {
-          ci.op_type[i] = is_pointer ? O_MD : O_IX;
-          ci.op_value[i] = stou(tokv[i+1]);
-          debug_putstr("%s:%x%9c", is_pointer?"p":"i",ci.op_value[i], ' ');
+        if(ci.op_type[op] == O_ANY && sisu(tokv[op+1])) {
+          ci.op_type[op] = is_pointer ? O_MD : O_IX;
+          ci.op_value[op] = stou(tokv[op+1]);
+          debug_putstr("%s:%x%9c", is_pointer?"p":"i",ci.op_value[op], ' ');
         }
 
         // Otherwise, it must be a symbol
-        if(ci.op_type[i] == O_ANY) {
-          s = find_or_add_symbol(tokv[i+1]);
-          nas = i;
+        if(ci.op_type[op] == O_ANY) {
+          symbol_id = find_or_add_symbol(tokv[op+1]);
+          nas = op;
 
-          ci.op_type[i] = is_pointer ? O_MD : O_IX;
-          ci.op_value[i] = stou(tokv[i+1]);
-          debug_putstr("%s:%s%9c", is_pointer?"p":"i", tokv[i+1], ' ');
+          ci.op_type[op] = is_pointer ? O_MD : O_IX;
+          ci.op_value[op] = stou(tokv[op+1]);
+          debug_putstr("%s:%s%9c", is_pointer?"p":"i", tokv[op+1], ' ');
         }
       }
 
       // Make debug info look better
-      for(j=i; j<I_MAX_OPS; j++) {
+      for(uint opc=op; opc<I_MAX_OPS; opc++) {
         debug_putstr("%9c", ' ');
       }
 
       // Process line
-      instr_id = find_instruction(&ci);
+      const uint instr_id = find_instruction(&ci);
 
       // Show error if no opcode found
       if(instr_id == ERROR_NOT_FOUND) {
@@ -904,8 +881,8 @@ int main(int argc, char* argv[])
       ci.opcode = i_data[instr_id].opcode;
 
       // Append symbol reference to table
-      if(s != 0xFFFF) {
-        append_symbol_ref(s, nas, ooffset, instr_id, &ci);
+      if(symbol_id != 0xFFFF) {
+        append_symbol_ref(symbol_id, nas, ooffset, instr_id, &ci);
       }
 
       // Write instruction to buffer
@@ -926,8 +903,7 @@ int main(int argc, char* argv[])
 
   // Symbol table is filled, resolve references
   if(ooffset != 0) {
-    uint r;
-    for(r=0; r<S_MAX_REF; r++) {
+    for(uint r=0; r<S_MAX_REF; r++) {
 
       // No more symbols: break
       if(s_ref[r].offset == 0) {
@@ -964,7 +940,7 @@ int main(int argc, char* argv[])
     debug_putstr("Dump: \n", ofile, ooffset);
 
     read_file(obuff, ofile, 0, ooffset);
-    for(i=0; i<ooffset; i++) {
+    for(uint i=0; i<ooffset; i++) {
       debug_putstr("%2x ", obuff[i]);
     }
 

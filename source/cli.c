@@ -7,13 +7,14 @@
 #include "ulib/ulib.h"
 #include "fs.h"
 #include "x86.h"
+#include "net.h"
 #include "cli.h"
 
 // Extern program call
-#define UPROG_MEMLOC 0x20000U
-#define UPROG_MEMMAX 0x10000U
-#define UPROG_ARGLOC 0x18000U
-#define UPROG_STRLOC 0x18080U
+#define UPROG_MEMLOC 0x20000
+#define UPROG_MEMMAX 0x10000
+#define UPROG_ARGLOC 0x18000
+#define UPROG_STRLOC 0x18080
 
 // Built-in commands implementation
 
@@ -52,11 +53,10 @@ static void cli_list(uint argc, char* argv[])
   }
 
   if(argc == 2) {
-    char line[64];
-    SFS_ENTRY entry;
-
+  
     // Get number of entries in target dir
-    uint n = fs_list(&entry, argv[1], 0);
+    sfs_entry_t entry;
+    const uint n = fs_list(&entry, argv[1], 0);
     if(n >= ERROR_ANY) {
       putstr("path not found\n");
       return;
@@ -65,26 +65,25 @@ static void cli_list(uint argc, char* argv[])
       putstr("\n");
       // Print one by one
       for(uint i=0; i<n; i++) {
-        time_t etime;
-        uint c, size;
-        uint result = 0;
         // Get entry
-        result = fs_list(&entry, argv[1], i);
+        const uint result = fs_list(&entry, argv[1], i);
         if(result >= ERROR_ANY) {
           putstr("Error\n");
           break;
         }
         // Listed entry is a dir? If so,
         // start this line with a '+'
+        char line[64] = {0};
         memset(line, 0, sizeof(line));
         strncpy(line, entry.flags & T_DIR ? "+ " : "  ", sizeof(line));
         strncat(line, (char*)entry.name, sizeof(line)); // Append name
         // We want size to be right-aligned so add spaces
         // depending on figures of entry size
+        uint c = 0;
         for(c=strlen(line); c<22; c++) {
           line[c] = ' ';
         }
-        size = entry.size;
+        uint size = entry.size;
         while((size = size / 10)) {
           line[--c] = 0;
         }
@@ -92,6 +91,7 @@ static void cli_list(uint argc, char* argv[])
         putstr("%s%u %s   ", line, (uint)entry.size,
           (entry.flags & T_DIR) ? "items" : "bytes");
         // Print date
+        time_t etime;
         fs_fstime_to_systime(entry.time, &etime);
         putstr("%4u/%2u/%2u %2u:%2u:%2u\n",
           etime.year,
@@ -112,8 +112,7 @@ static void cli_list(uint argc, char* argv[])
 static void cli_makedir(uint argc, char* argv[])
 {
   if(argc == 2) {
-    uint result = 0;
-    result = fs_create_directory(argv[1]);
+    const uint result = fs_create_directory(argv[1]);
     if(result == ERROR_NOT_FOUND) {
       putstr("error: path not found\n");
     } else if(result == ERROR_EXISTS) {
@@ -131,8 +130,7 @@ static void cli_makedir(uint argc, char* argv[])
 static void cli_delete(uint argc, char* argv[])
 {
   if(argc == 2) {
-    uint result = 0;
-    result = fs_delete(argv[1]);
+    const uint result = fs_delete(argv[1]);
     if(result >= ERROR_ANY) {
       putstr("error: failed to delete\n");
     }
@@ -145,8 +143,7 @@ static void cli_delete(uint argc, char* argv[])
 static void cli_move(uint argc, char* argv[])
 {
   if(argc == 3) {
-    uint result = 0;
-    result = fs_move(argv[1], argv[2]);
+    const uint result = fs_move(argv[1], argv[2]);
     if(result == ERROR_NOT_FOUND) {
       putstr("error: path not found\n");
     } else if(result == ERROR_EXISTS) {
@@ -164,8 +161,7 @@ static void cli_move(uint argc, char* argv[])
 static void cli_copy(uint argc, char* argv[])
 {
   if(argc == 3) {
-    uint result = 0;
-    result = fs_copy(argv[1], argv[2]);
+    const uint result = fs_copy(argv[1], argv[2]);
     if(result == ERROR_NOT_FOUND) {
       putstr("error: path not found\n");
     } else if(result == ERROR_EXISTS) {
@@ -199,6 +195,12 @@ static void cli_info(uint argc)
     }
     putstr("\n");
     putstr("System disk: %s\n", disk_to_string(system_disk));
+
+    const uint net_state = net_get_state();
+    putstr("Network state: %s\n", 
+      net_state == NET_STATE_ENABLED ? "enabled" :
+      net_state == NET_STATE_DISABLED ? "disabled" :
+      "uninitialized" );
     putstr("\n");
     dump_regs();
   } else {
@@ -210,9 +212,6 @@ static void cli_info(uint argc)
 static void cli_clone(uint argc, char* argv[])
 {
   if(argc == 2) {
-    SFS_ENTRY entry;
-    uint disk;
-    uint result = 0;
     // Show source disk info
     putstr("System disk: %s    fs=%s  size=%uMB\n",
       disk_to_string(system_disk),
@@ -221,7 +220,7 @@ static void cli_clone(uint argc, char* argv[])
       blocks_to_MB(disk_info[system_disk].fssize) :
       disk_info[system_disk].size );
     // Check target disk
-    disk = string_to_disk(argv[1]);
+    const uint disk = string_to_disk(argv[1]);
     if(disk == ERROR_NOT_FOUND) {
       putstr("Target disk not found (%s)\n", argv[1]);
       return;
@@ -245,28 +244,29 @@ static void cli_clone(uint argc, char* argv[])
     // Ask for confirmation
     putstr("\n");
     putstr("Press 'y' to confirm: ");
-    if(getkey() != 'y') {
+    if(getkey(GETKEY_WAITMODE_WAIT) != 'y') {
       putstr("\nUser aborted operation\n");
       return;
     }
     putstr("y\n");
     // Format disk and copy kernel
     putstr("Formatting and copying system files...\n");
-    result = fs_format(disk);
+    uint result = fs_format(disk);
     if(result != 0) {
       putstr("Error formatting disk. Aborted\n");
       return;
     }
     // Copy user files
     putstr("Copying user files...\n");
-    uint n = fs_list(&entry, ROOT_DIR_NAME, 0);
+    sfs_entry_t entry;
+    const uint n = fs_list(&entry, ROOT_DIR_NAME, 0);
     if(n >= ERROR_ANY) {
       putstr("Error creating file list\n");
       return;
     }
     // List entries
     for(uint i=0; i<n; i++) {
-      char dst[MAX_PATH];
+      char dst[MAX_PATH] = {0};
       result = fs_list(&entry, ROOT_DIR_NAME, i);
       if(result >= ERROR_ANY) {
         putstr("Error copying files. Aborted\n");
@@ -299,7 +299,7 @@ static void cli_read(uint argc, char* argv[])
   if(argc==2 || (argc==3 && strcmp(argv[1],"hex")==0)) {
     uint result = 0;
     uint offset = 0;
-    char buff[512];
+    char buff[512] = {0};
     memset(buff, 0, sizeof(buff));
     // While it can read the file, print it
     while((result = fs_read_file(buff, argv[argc-1], offset, sizeof(buff)))) {
@@ -331,7 +331,7 @@ static void cli_read(uint argc, char* argv[])
 static void cli_time(uint argc)
 {
   if(argc == 1) {
-    time_t ctime;
+    time_t ctime = {0};
     get_datetime(&ctime);
     putstr("\n%4u/%2u/%2u %2u:%2u:%2u\n\n",
       ctime.year,
@@ -345,24 +345,62 @@ static void cli_time(uint argc)
   }
 }
 
+// Set system config
+static void cli_config(uint argc, char* argv[])
+{
+  // Config command: Show or edit config parameters
+  if(argc == 1) {
+    putstr("\n");
+    putstr("net_IP: %u.%u.%u.%u\n", local_ip[0], local_ip[1], local_ip[2], local_ip[3]);
+    putstr("net_gate: %u.%u.%u.%u\n", local_gate[0], local_gate[1], local_gate[2], local_gate[3]);
+    putstr("\n");
+  } else if(argc == 2 && strcmp(argv[1], "save") == 0) {
+    char config_str[512] = {0};
+    char ip_str[32] = {0};
+
+    // Save config file
+    memset(config_str, 0, sizeof(config_str));
+
+    strncat(config_str, "config net_IP ", sizeof(config_str));
+    strncat(config_str, ip_to_str(ip_str, local_ip), sizeof(config_str));
+    strncat(config_str, "\n", sizeof(config_str));
+
+    strncat(config_str, "config net_gate ", sizeof(config_str));
+    strncat(config_str, ip_to_str(ip_str, local_gate), sizeof(config_str));
+    strncat(config_str, "\n", sizeof(config_str));
+
+    fs_write_file(config_str, "config.ini", 0, strlen(config_str)+1, WF_CREATE|WF_TRUNCATE);
+    debug_putstr("Config file saved\n");
+
+  } else if(argc == 3) {
+    if(strcmp(argv[1], "net_IP") == 0) {
+      str_to_ip(local_ip, argv[2]);
+    } else if(strcmp(argv[1], "net_gate") == 0) {
+      str_to_ip(local_gate, argv[2]);
+    }
+
+  } else {
+    putstr("usage:\nconfig\nconfig save\nconfig <var> <value>\n");
+  }
+}
+
 // Not a built-in command case:
 // -Try to find and run executable file
 // -Show "Unknown command" error if not found
 static void cli_extern(uint argc, char* argv[])
 {
   // Try to find an executable file
-  char* prog_ext = ".bin";
-  SFS_ENTRY entry;
-  char prog_file_name[32];
+  char prog_file_name[32] = {0};
   strncpy(prog_file_name, argv[0], sizeof(prog_file_name));
 
   // Append .bin if there is not a '.' in the name
+  const char* prog_ext = ".bin";
   if(!strchr(prog_file_name, '.')) {
     strncat(prog_file_name, prog_ext, sizeof(prog_file_name));
   }
   // Find .bin file
-  uint result = 0;
-  result = fs_get_entry(&entry, prog_file_name, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  sfs_entry_t entry;
+  uint result = fs_get_entry(&entry, prog_file_name, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(result < ERROR_ANY) {
     // Found
     if(entry.flags & T_FILE) {
@@ -371,7 +409,7 @@ static void cli_extern(uint argc, char* argv[])
         putstr("not enough memory\n");
         return;
       }
-      uint r = fs_read_file((void*)UPROG_MEMLOC, prog_file_name, 0, entry.size);
+      const uint r = fs_read_file((void*)UPROG_MEMLOC, prog_file_name, 0, entry.size);
       if(r>=ERROR_ANY) {
         putstr("error loading file\n");
         debug_putstr("error loading file\n");
@@ -387,19 +425,18 @@ static void cli_extern(uint argc, char* argv[])
   if(result >= ERROR_ANY || result == 0) {
     putstr("unknown command\n");
   } else {
-    uint uarg = 0;
-    uint c = 0;
-    char** arg_var = (char**)UPROG_ARGLOC;
-    char* arg_str = (char*)UPROG_STRLOC;
-
     // Check name ends with ".bin"
     if(strcmp(&prog_file_name[strchr(prog_file_name, '.') - 1], prog_ext)) {
       putstr("error: only %s files can be executed\n", prog_ext);
       return;
     }
 
+    uint c = 0;
+    char** arg_var = (char**)UPROG_ARGLOC;
+    char* arg_str = (char*)UPROG_STRLOC;
+
     // Create argv copy in program segment
-    for(uarg=0; uarg<argc; uarg++) {
+    for(uint uarg=0; uarg<argc; uarg++) {
       arg_var[uarg] = (char*)(UPROG_STRLOC+c);
       for(uint i=0; i<strlen(argv[uarg])+1; i++) {
         arg_str[c] = argv[uarg][i];
@@ -422,19 +459,18 @@ static void cli_extern(uint argc, char* argv[])
 // Command line interface
 
 // Execute a command
-#define CLI_MAX_ARG 4
+#define CLI_MAX_ARG 5
 static void execute(char* str)
 {
-  uint  argc;
-  char* argv[CLI_MAX_ARG];
-  char* tok = str;
-  char* nexttok = tok;
+  char* argv[CLI_MAX_ARG] = {NULL};
 
   memset(argv, 0, sizeof(argv));
   debug_putstr("in> %s\n", str);
 
   // Tokenize
-  argc = 0;
+  uint argc = 0;
+  char* tok = str;
+  char* nexttok = tok;
   while(*tok && *nexttok && argc < CLI_MAX_ARG) {
     tok = strtok(tok, &nexttok, ' ');
     if(*tok) {
@@ -488,6 +524,10 @@ static void execute(char* str)
     // Show time and date
     cli_time(argc);
 
+  } else if(strcmp(argv[0], "config") == 0) {
+    // Manage system config
+    cli_config(argc, argv);
+
   } else if(strcmp(argv[0], "help") == 0) {
     // Show help
     if(argc == 1) {
@@ -496,6 +536,7 @@ static void execute(char* str)
       putstr("\n");
       putstr("clone    - clone system in another disk\n");
       putstr("cls      - clear the screen\n");
+      putstr("config   - show or set config\n");
       putstr("copy     - create a copy of a file or directory\n");
       putstr("delete   - delete entry\n");
       putstr("help     - show this help\n");
@@ -535,11 +576,48 @@ static void execute(char* str)
   }
 }
 
+// Execute script file
+void cli_exec_file(char* path)
+{
+  char line[72] = {0};
+  uint offset = 0;
+
+  while(1) {
+    // Read file
+    const uint readed = fs_read_file(line, path, offset, sizeof(line));
+
+    if(readed==0 || readed>=ERROR_ANY) {
+      debug_putstr("CLI: Read file (%s) error %x\n",
+      path, readed);
+      return;
+    }
+
+    // Isolate a line
+    uint i = 0;
+    for(i=0; i<readed; i++) {
+      if(line[i] == '\n') {
+        line[i] = 0;
+        offset += 1+i;
+        break;
+      }
+    }
+
+    // Escape if lines are too long
+    if(i==readed) {
+      return;
+    }
+
+    // Run line
+    execute(line);
+  }
+}
+
+
 // Command line interface - main loop
 void cli()
 {
   while(1) {
-    char str[72];
+    char str[72] = {0};
 
     // Prompt and wait command
     putstr("> ");

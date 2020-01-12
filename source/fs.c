@@ -22,8 +22,7 @@ const char* disk_to_string(uint disk)
 // String to disk
 uint string_to_disk(const char* str)
 {
-  uint index;
-  for(index=0; index<MAX_DISK; index++) {
+  for(uint index=0; index<MAX_DISK; index++) {
     if(strcmp(str, disk_info[index].name) == 0) {
       return index;
     }
@@ -33,11 +32,9 @@ uint string_to_disk(const char* str)
 }
 
 // Return 1 if string is a disk identifier, 0 otherwise
-uint string_is_disk(char* str)
+uint string_is_disk(const char* str)
 {
-  uint index = 0;
-
-  for(index=0; index<MAX_DISK; index++) {
+  for(uint index=0; index<MAX_DISK; index++) {
     if(strcmp(str, disk_info[index].name) == 0) {
       return 1;
     }
@@ -56,8 +53,7 @@ uint blocks_to_MB(uint blocks)
 // is clamped to SFS_NAMESIZE-1
 static char* string_to_name(char* str)
 {
-  uint i=0;
-  for(i=0; i<strlen(str); i++) {
+  for(uint i=0; i<strlen(str); i++) {
     if((str[i] < '0' || str[i] > '9') &&
        (str[i] < 'A' || str[i] > 'Z') &&
        (str[i] < 'a' || str[i] > 'z') &&
@@ -79,10 +75,8 @@ static char* string_to_name(char* str)
 // Returns 0 on success, another value otherwise
 static uint read_disk(uint disk, uint block, uint offset, size_t size, void* buff)
 {
-  uint sector = 0;
-
   // Convert blocks to sectors
-  sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
+  uint sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
 
   // Compute initial sector and offset
   sector += offset / DISK_SECTOR_SIZE;
@@ -95,10 +89,8 @@ static uint read_disk(uint disk, uint block, uint offset, size_t size, void* buf
 // Returns 0 on success, another value otherwise
 static uint write_disk(uint disk, uint block, uint offset, size_t size, const void* buff)
 {
-  uint sector = 0;
-
   // Convert blocks to sectors
-  sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
+  uint sector = (block * BLOCK_SIZE) / DISK_SECTOR_SIZE;
 
   // Compute initial sector and offset
   sector += offset / DISK_SECTOR_SIZE;
@@ -108,16 +100,15 @@ static uint write_disk(uint disk, uint block, uint offset, size_t size, const vo
 }
 
 // Get filesystem info
-uint fs_get_info(uint disk, FS_INFO* info)
+uint fs_get_info(uint disk, fs_info_t* info)
 {
-  uint n = 0;
-
   // Check parameters
   if(info == 0 || disk >= MAX_DISK) {
     return 1;
   }
 
   // Count avaliable disks (n)
+  uint n = 0;
   uint j = 0xFFFF;
   for(uint i=0; i<MAX_DISK; i++) {
     if(disk_info[i].size != 0) {
@@ -144,8 +135,6 @@ uint fs_get_info(uint disk, FS_INFO* info)
 // Reads superblock and fills disk info
 void fs_init_info()
 {
-  uint result = 0;
-
   // For each disk
   for(uint disk_index=0; disk_index<MAX_DISK; disk_index++) {
     debug_putstr("Check filesystem in %2x: ", disk_index);
@@ -153,8 +142,8 @@ void fs_init_info()
     // If hardware related disk info is valid
     if(disk_info[disk_index].size != 0) {
       // Read superblock and check file system type and data
-      SFS_SUPERBLOCK sb;
-      result = read_disk(disk_index, 1, 0, sizeof(sb), &sb);
+      sfs_superblock_t sb;
+      const uint result = read_disk(disk_index, 1, 0, sizeof(sb), &sb);
       if(result == 0 && sb.type == SFS_TYPE_ID) {
         disk_info[disk_index].fstype = FS_TYPE_NSFS;
         disk_info[disk_index].fssize = sb.size;
@@ -169,18 +158,15 @@ void fs_init_info()
 }
 
 // Get disk id from path string
-static uint path_get_disk(char* path)
+static uint path_get_disk(const char* path)
 {
-  char tokpath[64];
-  char* tok;
-  char* nexttok;
-
   // Make a copy of path because tokenize
   // process will replaces some bytes
+  char tokpath[64] = {0};
   memset(tokpath, 0, sizeof(tokpath));
   strncpy(tokpath, path, sizeof(tokpath));
-  tok = tokpath;
-  nexttok = tok;
+  char* tok = tokpath;
+  char* nexttok = tok;
 
   // First token should be disk identifier
   tok = strtok(tok, &nexttok, PATH_SEPARATOR);
@@ -200,18 +186,13 @@ static uint path_get_disk(char* path)
 // Return 0 on success, ERROR_NOT_FOUND if parent path does not exist, or another error code
 static uint path_parse_disk_parent_name(char** name, uint* parent, uint* disk, char* path)
 {
-  char tokpath[64];
-  char* tok;
-  char* nexttok;
-  SFS_ENTRY entry;
-  uint n = 0;
-
   // Make a copy of path because tokenize
   // process will replaces some bytes
+  char tokpath[64] = {0};
   memset(tokpath, 0, sizeof(tokpath));
   strncpy(tokpath, path, sizeof(tokpath));
-  tok = tokpath;
-  nexttok = tok;
+  char* tok = tokpath;
+  char* nexttok = tok;
 
   // Start at root of system disk
   *disk = system_disk;
@@ -219,6 +200,7 @@ static uint path_parse_disk_parent_name(char** name, uint* parent, uint* disk, c
   *name = path;
 
   // Check entries token by token
+  uint n = 0;
   while(*tok && *nexttok) {
     tok = strtok(tok, &nexttok, PATH_SEPARATOR);
     *name = path + (uint)(tok - tokpath);
@@ -234,6 +216,7 @@ static uint path_parse_disk_parent_name(char** name, uint* parent, uint* disk, c
     }
     // Check entry exists
     if(*tok && *nexttok) {
+      sfs_entry_t entry;
       *parent = fs_get_entry(&entry, tok, *parent, *disk);
       if(*parent >= ERROR_ANY) {
         return *parent;
@@ -247,28 +230,22 @@ static uint path_parse_disk_parent_name(char** name, uint* parent, uint* disk, c
 
 // Get entry by disk and index
 // Returns the input index or ERROR_IO. Does check nothing
-static uint get_entry_n(SFS_ENTRY* entry, uint disk, size_t n)
+static uint get_entry_n(sfs_entry_t* entry, uint disk, size_t n)
 {
   // Compute block number and offset
-  uint block = 2 + (n * sizeof(SFS_ENTRY)) / BLOCK_SIZE;
-
-  uint offset = (n * sizeof(SFS_ENTRY)) % BLOCK_SIZE;
+  const uint block = 2 + (n * sizeof(sfs_entry_t)) / BLOCK_SIZE;
+  const uint offset = (n * sizeof(sfs_entry_t)) % BLOCK_SIZE;
 
   // Read and return
   uint result = read_disk(disk, block, offset,
-    sizeof(SFS_ENTRY), (char*)entry);
+    sizeof(sfs_entry_t), (char*)entry);
 
   return result != 0 ? ERROR_IO : n;
 }
 
 // Get an entry given a path, parent and disk
-uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk)
+uint fs_get_entry(sfs_entry_t* entry, char* path, uint parent, uint disk)
 {
-  SFS_SUPERBLOCK sb;
-  uint n = 0;
-  uint result;
-  char* name;
-
   // If path is just a disk identifier and disk is unknown
   // then path is the root directory of this disk
   if(disk == UNKNOWN_VALUE && string_is_disk(path)) {
@@ -284,9 +261,11 @@ uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk)
     disk = system_disk;
   }
 
+  uint result = 0;
+
   // If path has components, get parent, disk and single entry name
   if(parent == 0 && strchr(path, PATH_SEPARATOR)) {
-    name = path;
+    char* name = path;
     result = path_parse_disk_parent_name(&name, &parent, &disk, path);
     if(result >= ERROR_ANY) {
       return result;
@@ -295,12 +274,14 @@ uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk)
   }
 
   // Read superblock
+  sfs_superblock_t sb;
   result = read_disk(disk, 1, 0, sizeof(sb), (void*)&sb);
   if(result != 0) {
     return ERROR_IO;
   }
 
   // Check all entries
+  uint n = 0;
   while(n < sb.nentries) {
     result = get_entry_n(entry, disk, n);
     if(result >= ERROR_ANY) {
@@ -324,12 +305,12 @@ uint fs_get_entry(SFS_ENTRY* entry, char* path, uint parent, uint disk)
 // contains its nref-th reference.
 // disk id and index of input entry must be also provided.
 // Returns the index of outentry in the entry table, or an error code
-static uint get_nref_entry_from_entry(SFS_ENTRY* outentry,
-  SFS_ENTRY* entry, uint disk, uint nentry, uint nref)
+static uint get_nref_entry_from_entry(sfs_entry_t* outentry,
+  sfs_entry_t* entry, uint disk, uint nentry, uint nref)
 {
   // Initialize return entry information to the first entry
   uint result = nentry;
-  memcpy(outentry, entry, sizeof(SFS_ENTRY));
+  memcpy(outentry, entry, sizeof(sfs_entry_t));
 
   // While reference index exceeds number of references in an entry
   while((nref = nref / SFS_ENTRYREFS) > 0) {
@@ -349,22 +330,20 @@ static uint get_nref_entry_from_entry(SFS_ENTRY* outentry,
 // Read file in buff, given path, offset and count
 uint fs_read_file(void* buff, char* path, uint offset, size_t count)
 {
-  SFS_ENTRY entry;
-  uint nentry;
+  debug_putstr("fs_read_file %x %s %u %u\n", buff, path, offset, count);
   uint result = 0;
-  uint read = 0;
-  uint block;
 
   // Find entry
-  debug_putstr("fs_read_file %x %s %u %u\n", buff, path, offset, count);
-  uint disk = path_get_disk(path);
-  nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
-  if(nentry < ERROR_ANY && (entry.flags & T_FILE)) {
+  sfs_entry_t entry;
+  uint nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  if(nentry < ERROR_ANY && (entry.flags & T_FILE)) { 
     // Compute initial block and offset
     offset = min(offset, entry.size);
     count = min(count, entry.size - offset);
-    block = offset / BLOCK_SIZE;
+    uint block = offset / BLOCK_SIZE;
     offset = offset % BLOCK_SIZE;
+    const uint disk = path_get_disk(path); 
+    uint read = 0;
     while(read < count) {
       // Get chained entry for a given reference index number
       nentry = get_nref_entry_from_entry(&entry, &entry, disk, nentry, block);
@@ -399,16 +378,15 @@ uint fs_read_file(void* buff, char* path, uint offset, size_t count)
 }
 
 // Write entry by index at disk
-static uint write_entry(SFS_ENTRY* entry, uint disk, size_t n)
+static uint write_entry(sfs_entry_t* entry, uint disk, size_t n)
 {
   // Compute block number and offset
-  uint block = 2 + (n*sizeof(SFS_ENTRY)) / BLOCK_SIZE;
-
-  uint offset = (n*sizeof(SFS_ENTRY)) % BLOCK_SIZE;
+  const uint block = 2 + (n*sizeof(sfs_entry_t)) / BLOCK_SIZE;
+  const uint offset = (n*sizeof(sfs_entry_t)) % BLOCK_SIZE;
 
   // Write and return
   uint result = write_disk(disk, block, offset,
-    sizeof(SFS_ENTRY), entry);
+    sizeof(sfs_entry_t), entry);
 
   return result != 0 ? ERROR_IO : 0;
 }
@@ -416,16 +394,14 @@ static uint write_entry(SFS_ENTRY* entry, uint disk, size_t n)
 // Set entry time to NOW
 static uint set_entry_time_to_current(uint disk, uint nentry)
 {
-  SFS_ENTRY entry;
-  time_t ctime;
-  uint32_t fstime;
-
   // Get time and convert to fs time
+  time_t ctime = {0};
   get_datetime(&ctime);
-  fstime = fs_systime_to_fstime(&ctime);
+  const uint32_t fstime = fs_systime_to_fstime(&ctime);
 
   // Set in initial entry and all chained entries
   do {
+    sfs_entry_t entry;
     uint result = get_entry_n(&entry, disk, nentry);
     if(result >= ERROR_ANY) {
       return result;
@@ -445,18 +421,17 @@ static uint set_entry_time_to_current(uint disk, uint nentry)
 // Return its index or an error code
 static uint find_free_entry(uint disk)
 {
-  SFS_SUPERBLOCK sb;
-  SFS_ENTRY entry;
-  uint n = 0;
-
   // Read super block
+  sfs_superblock_t sb;
   uint result = read_disk(disk, 1, 0, sizeof(sb), &sb);
   if(result != 0) {
     return ERROR_IO;
   }
 
   // Find an unused entry
+  uint n = 0;
   while(n < sb.nentries) {
+    sfs_entry_t entry;
     result = get_entry_n(&entry, disk, n);
     if(result >= ERROR_ANY) {
       return result;
@@ -484,39 +459,32 @@ static size_t needed_blocks(size_t size)
 // Return its index or ERROR_NOT_FOUND
 static uint find_free_block(uint disk)
 {
-  SFS_SUPERBLOCK sb;
-  SFS_ENTRY entry;
-  uint free_block = 0;
-  uint max_blocks;
-  uint first_data_block;
-  uint n = 0;
-  uint b = 0;
-  uint found = 0;
-
   // Read superblock
+  sfs_superblock_t sb;
   uint result = read_disk(disk, 1, 0, sizeof(sb), &sb);
   if(result != 0) {
     return ERROR_IO;
   }
 
   // Compute first data block index
-  first_data_block = 2L +
-    (sb.nentries*sizeof(SFS_ENTRY))/BLOCK_SIZE;
+  const uint first_data_block = 2 +
+    (sb.nentries*sizeof(sfs_entry_t))/BLOCK_SIZE;
 
   // For each possible block index
-  max_blocks = sb.size;
-  for(free_block=first_data_block; free_block<max_blocks; free_block++) {
+  const uint max_blocks = sb.size;
+  for(uint free_block=first_data_block; free_block<max_blocks; free_block++) {
 
     // Check if there is an entry referencing it
-    found = 0;
-    n = 0;
+    uint found = 0;
+    uint n = 0;
     while(found == 0 && n < sb.nentries) {
+      sfs_entry_t entry;
       result = get_entry_n(&entry, disk, n);
       if(result >= ERROR_ANY) {
         return result;
       }
       if(entry.flags & T_FILE) {
-        for(b=0; b<min(needed_blocks((uint)entry.size), SFS_ENTRYREFS); b++) {
+        for(uint b=0; b<min(needed_blocks((uint)entry.size), SFS_ENTRYREFS); b++) {
           if(entry.ref[b] == free_block) {
             // If there is, this block is not free
             found = 1;
@@ -542,10 +510,6 @@ static uint find_free_block(uint disk)
 // Unused or newly created references are set to 0
 static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
 {
-  SFS_ENTRY entry;
-  uint result;
-  uint i;
-
   // Compute number of needed entries
   uint nentries = refcount / SFS_ENTRYREFS;
   if(refcount % SFS_ENTRYREFS) {
@@ -553,7 +517,8 @@ static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
   }
 
   // Start from the first one
-  result = get_entry_n(&entry, disk, nentry);
+  sfs_entry_t entry;
+  uint result = get_entry_n(&entry, disk, nentry);
   if(result >= ERROR_ANY) {
     return result;
   }
@@ -588,7 +553,7 @@ static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
   }
 
   // Set to 0 unused references of last chained entry
-  for(i=refcount%SFS_ENTRYREFS; i<SFS_ENTRYREFS; i++) {
+  for(uint i=refcount%SFS_ENTRYREFS; i<SFS_ENTRYREFS; i++) {
     entry.ref[i] = 0;
   }
   result = write_entry(&entry, disk, nentry);
@@ -625,12 +590,10 @@ static uint set_entry_refcount(uint disk, uint nentry, uint refcount)
 // Set entry size value, and update also chained entries
 static uint set_entry_size(uint disk, uint nentry, size_t size)
 {
-  SFS_ENTRY entry;
-  uint result;
-
   // Update chain starting from nentry
   do {
-    result = get_entry_n(&entry, disk, nentry);
+    sfs_entry_t entry;
+    uint result = get_entry_n(&entry, disk, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
@@ -652,7 +615,7 @@ static uint set_entry_size(uint disk, uint nentry, size_t size)
 }
 
 // Given an entry, return its refcount
-static uint get_entry_refcount(SFS_ENTRY* entry)
+static uint get_entry_refcount(sfs_entry_t* entry)
 {
   uint refcount = 0;
   if(entry->flags & T_FILE) {
@@ -668,23 +631,19 @@ static uint get_entry_refcount(SFS_ENTRY* entry)
 // Advances throguh the chain if needed
 static uint add_ref_in_entry(uint disk, uint nentry, uint ref)
 {
-  SFS_ENTRY entry;
-  SFS_ENTRY refentry;
-  uint nrefentry = nentry;
-  uint refcount;
-  uint result;
-
   // Get initial entry
-  result = get_entry_n(&entry, disk, nentry);
+  sfs_entry_t entry;
+  uint result = get_entry_n(&entry, disk, nentry);
   if(result >= ERROR_ANY) {
     return result;
   }
 
   // Get current number of references
-  refcount = get_entry_refcount(&entry);
+  uint refcount = get_entry_refcount(&entry);
 
   // Get chained entry to add a new one
-  nrefentry = get_nref_entry_from_entry(&refentry, &entry, disk, nrefentry, refcount);
+  sfs_entry_t refentry;
+  uint nrefentry = get_nref_entry_from_entry(&refentry, &entry, disk, nentry, refcount);
   if(nrefentry>=ERROR_ANY && nrefentry!=ERROR_NOT_FOUND) {
     return nrefentry;
   }
@@ -723,28 +682,24 @@ static uint add_ref_in_entry(uint disk, uint nentry, uint ref)
 // Updates size and chain length if needed
 static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
 {
-  SFS_ENTRY entry;
-  SFS_ENTRY currentry;
-  SFS_ENTRY nextentry;
-  uint ncurrentry = nentry;
-  uint refcount = 0;
-  uint result = 0;
-  uint r = 0;
-  char found = 0;
-
   // Get initial entry
-  result = get_entry_n(&entry, disk, nentry);
+  sfs_entry_t entry;
+  uint result = get_entry_n(&entry, disk, nentry);
   if(result >= ERROR_ANY) {
     return result;
   }
+  sfs_entry_t currentry;
+  sfs_entry_t nextentry;
   memcpy(&currentry, &entry, sizeof(entry));
   memcpy(&nextentry, &entry, sizeof(entry));
 
   // Get total number of references
-  refcount = get_entry_refcount(&entry);
+  uint refcount = get_entry_refcount(&entry);
 
   // Find value in reference list
-  for(r=0; r<refcount; r++) {
+  char found = 0;
+  uint ncurrentry = nentry;
+  for(uint r=0; r<refcount; r++) {
     if(r == SFS_ENTRYREFS) {
       result = write_entry(&currentry, disk, ncurrentry);
       if(result >= ERROR_ANY) {
@@ -800,16 +755,9 @@ static uint remove_ref_in_entry(uint disk, uint nentry, uint ref)
 // Write buff to file given path, offset, count and flags
 uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint flags)
 {
-  uint disk;
-  uint nentry;
-  SFS_ENTRY entry;
-  SFS_ENTRY tentry;
-  uint written;
-  uint result = 0;
-
   // Find file
-  disk = path_get_disk(path);
-  nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  sfs_entry_t entry;
+  uint nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
 
   // Does not exist and should not create or it's a directory: return
   if((nentry == ERROR_NOT_FOUND && !(flags & WF_CREATE)) ||
@@ -821,6 +769,8 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
   }
 
   // Create file if needed
+  uint result = 0;
+  uint disk = path_get_disk(path);
   if(nentry == ERROR_NOT_FOUND && (flags & WF_CREATE)) {
     uint parent = 0;
     memset(&entry, 0, sizeof(entry));
@@ -860,7 +810,6 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
   if(entry.size < offset + count) {
     uint current_block = needed_blocks(entry.size);
     uint final_block = needed_blocks(offset + count);
-    uint ntentry;
 
     // Set reference count and size in the chain
     result = set_entry_refcount(disk, nentry, needed_blocks(offset + count));
@@ -873,11 +822,12 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
     }
 
     // Allocate blocks
+    sfs_entry_t tentry;
     result = get_entry_n(&tentry, disk, nentry);
     if(result >= ERROR_ANY) {
       return result;
     }
-    ntentry = nentry;
+    uint ntentry = nentry;
 
     for(; current_block < final_block; current_block++) {
       while(current_block > SFS_ENTRYREFS) {
@@ -924,7 +874,7 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
   }
 
   // Now file has the right size: write data
-  written = 0;
+  uint written = 0;
   while(count > 0) {
     uint to_copy = min(count, BLOCK_SIZE - (offset % BLOCK_SIZE));
     uint current_block = needed_blocks(offset + to_copy) - 1;
@@ -959,8 +909,7 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
 // Deletes the full chain
 static uint delete_n(uint disk, size_t n)
 {
-  SFS_ENTRY entry;
-
+  sfs_entry_t entry;
   uint result = get_entry_n(&entry, disk, n);
   if(result >= ERROR_ANY) {
     return result;
@@ -1004,13 +953,10 @@ static uint delete_n(uint disk, size_t n)
 // Delete entry by path
 uint fs_delete(char* path)
 {
-  uint disk;
-  uint nentry;
-  SFS_ENTRY entry;
-
   // Find entry, and delete by index
-  disk = path_get_disk(path);
-  nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  uint disk = path_get_disk(path);
+  sfs_entry_t entry;
+  uint nentry = fs_get_entry(&entry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(nentry < ERROR_ANY) {
     nentry = delete_n(disk, nentry);
   }
@@ -1021,12 +967,9 @@ uint fs_delete(char* path)
 // Create a dirrectory
 uint fs_create_directory(char* path)
 {
-  SFS_ENTRY entry;
+  // Get disk, parent entry index, and directory name from path
   uint disk = UNKNOWN_VALUE;
   uint parent = UNKNOWN_VALUE;
-  uint nentry = 0;
-
-  // Get disk, parent entry index, and directory name from path
   uint result = path_parse_disk_parent_name(&path, &parent, &disk, path);
   if(result >= ERROR_ANY) {
     return result;
@@ -1036,6 +979,7 @@ uint fs_create_directory(char* path)
   path = string_to_name(path);
 
   // Check target does not exist
+  sfs_entry_t entry;
   result = fs_get_entry(&entry, path, parent, disk);
   if(result != ERROR_NOT_FOUND) {
     if(result >= ERROR_ANY) {
@@ -1045,7 +989,7 @@ uint fs_create_directory(char* path)
   }
 
   // Find a free entry index
-  nentry = find_free_entry(disk);
+  uint nentry = find_free_entry(disk);
   if(nentry >= ERROR_ANY) {
     return nentry;
   }
@@ -1082,16 +1026,10 @@ uint fs_create_directory(char* path)
 // Move entry
 uint fs_move(char* srcpath, char* dstpath)
 {
-  uint result;
-  uint dst_parent;
-  uint srcdisk;
-  uint dstdisk;
-  uint nentry;
-  SFS_ENTRY entry;
-  char* dstname;
-
   // Get disk, parent entry index, and name from destination path
-  result = path_parse_disk_parent_name(&dstname, &dst_parent, &dstdisk, dstpath);
+  uint dst_parent=0, dstdisk=0;
+  char* dstname = 0;
+  uint result = path_parse_disk_parent_name(&dstname, &dst_parent, &dstdisk, dstpath);
   if(result >= ERROR_ANY) {
     return result;
   }
@@ -1100,6 +1038,7 @@ uint fs_move(char* srcpath, char* dstpath)
   dstname = string_to_name(dstname);
 
   // Check destination does not exist
+  sfs_entry_t entry;
   result = fs_get_entry(&entry, dstname, dst_parent, dstdisk);
   if(result != ERROR_NOT_FOUND) {
     if(result >= ERROR_ANY) {
@@ -1109,8 +1048,8 @@ uint fs_move(char* srcpath, char* dstpath)
   }
 
   // Check source exists
-  srcdisk = path_get_disk(srcpath);
-  nentry = fs_get_entry(&entry, srcpath, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  const uint srcdisk = path_get_disk(srcpath);
+  const uint nentry = fs_get_entry(&entry, srcpath, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(nentry >= ERROR_ANY) {
     return nentry;
   }
@@ -1154,16 +1093,10 @@ uint fs_move(char* srcpath, char* dstpath)
 // Copy entry
 uint fs_copy(char* srcpath, char* dstpath)
 {
-  uint result;
-  uint dst_parent;
-  uint src_disk;
-  uint dst_disk;
-  uint nentry;
-  SFS_ENTRY entry;
-  char* dstname;
-
   // Get disk, parent entry index, and name from destination path
-  result = path_parse_disk_parent_name(&dstname, &dst_parent, &dst_disk, dstpath);
+  uint dst_parent=0, dst_disk=0;
+  char* dstname = 0;
+  uint result = path_parse_disk_parent_name(&dstname, &dst_parent, &dst_disk, dstpath);
   if(result >= ERROR_ANY) {
     return result;
   }
@@ -1172,6 +1105,7 @@ uint fs_copy(char* srcpath, char* dstpath)
   dstname = string_to_name(dstname);
 
   // Check destination does not exist
+  sfs_entry_t entry;
   result = fs_get_entry(&entry, dstname, dst_parent, dst_disk);
   if(result != ERROR_NOT_FOUND) {
     if(result >= ERROR_ANY) {
@@ -1181,8 +1115,8 @@ uint fs_copy(char* srcpath, char* dstpath)
   }
 
   // Check source exists
-  src_disk = path_get_disk(srcpath);
-  nentry = fs_get_entry(&entry, srcpath, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  const uint src_disk = path_get_disk(srcpath);
+  const uint nentry = fs_get_entry(&entry, srcpath, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(nentry >= ERROR_ANY) {
     return nentry;
   }
@@ -1191,7 +1125,7 @@ uint fs_copy(char* srcpath, char* dstpath)
   if(entry.flags & T_FILE) {
     uint offset = 0;
     uint copied = 0;
-    char buff[BLOCK_SIZE];
+    char buff[BLOCK_SIZE] = {0};
 
     while((copied = fs_read_file(buff, srcpath, offset, sizeof(buff)))) {
       if(copied >= ERROR_ANY) {
@@ -1207,8 +1141,6 @@ uint fs_copy(char* srcpath, char* dstpath)
   }
   // If source is a directory
   else if(entry.flags & T_DIR) {
-    uint r = 0;
-
     // Create the directory
     result = fs_create_directory(dstpath);
     if(result >= ERROR_ANY) {
@@ -1216,10 +1148,10 @@ uint fs_copy(char* srcpath, char* dstpath)
     }
 
     // Iterate and recursively copy entries
-    for(r=0; r<entry.size; r++) {
-      SFS_ENTRY tentry;
-      char src_path[64];
-      char dst_path[64];
+    for(uint r=0; r<entry.size; r++) {
+      sfs_entry_t tentry;
+      char src_path[64] = {0};
+      char dst_path[64] = {0};
       result = get_entry_n(&tentry, src_disk, entry.ref[r]);
       if(result >= ERROR_ANY) {
         return result;
@@ -1246,16 +1178,13 @@ uint fs_copy(char* srcpath, char* dstpath)
 }
 
 // List entries in a directory
-uint fs_list(SFS_ENTRY* entry, char* path, uint n)
+uint fs_list(sfs_entry_t* entry, char* path, uint n)
 {
-  uint nentry;
-  uint disk;
-  SFS_ENTRY direntry;
+  memset(entry, 0, sizeof(sfs_entry_t));
 
   // Find entry
-  disk = path_get_disk(path);
-  memset(entry, 0, sizeof(SFS_ENTRY));
-  nentry = fs_get_entry(&direntry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
+  sfs_entry_t direntry;
+  const uint nentry = fs_get_entry(&direntry, path, UNKNOWN_VALUE, UNKNOWN_VALUE);
   if(nentry >= ERROR_ANY) {
     return nentry;
   }
@@ -1264,6 +1193,7 @@ uint fs_list(SFS_ENTRY* entry, char* path, uint n)
   if(direntry.flags & T_DIR) {
     if(n < direntry.size) {
        // Advance to the chained entry contaning the nth reference
+      const uint disk = path_get_disk(path);
       uint res = get_nref_entry_from_entry(&direntry, &direntry, disk, nentry, n);
       if(res >= ERROR_ANY) {
         return res;
@@ -1282,21 +1212,11 @@ uint fs_list(SFS_ENTRY* entry, char* path, uint n)
 // Format a disk
 uint fs_format(uint disk)
 {
-  char k_src_path[32];
-  char k_dst_path[32];
-  char buff[BLOCK_SIZE];
-  SFS_ENTRY* entry;
-  SFS_SUPERBLOCK* sb;
-  uint nentries;
-  uint result = 0;
-  uint e;
-  uint32_t disk_size;
-  uint disk_index = disk;
-
   debug_putstr("format disk: %x (system_disk=%x)\n", disk, system_disk);
 
   // Copy boot block from system disk to target disk
-  result = read_disk(system_disk, 0, 0, BLOCK_SIZE, buff);
+  char buff[BLOCK_SIZE] = {0};
+  uint result = read_disk(system_disk, 0, 0, BLOCK_SIZE, buff);
   if(result != 0) {
     return ERROR_IO;
   }
@@ -1307,9 +1227,9 @@ uint fs_format(uint disk)
   }
 
   // Create superblock
-  disk_size = disk_info[disk_index].sectors *
-    disk_info[disk_index].sides *
-    disk_info[disk_index].cylinders;
+  uint32_t disk_size = disk_info[disk].sectors *
+    disk_info[disk].sides *
+    disk_info[disk].cylinders;
 
   if(DISK_SECTOR_SIZE > BLOCK_SIZE) {
     disk_size *= (DISK_SECTOR_SIZE/BLOCK_SIZE);
@@ -1318,24 +1238,24 @@ uint fs_format(uint disk)
   }
 
   memset(buff, 0, sizeof(buff));
-  sb = (SFS_SUPERBLOCK*)buff;
+  sfs_superblock_t* sb = (sfs_superblock_t*)buff;
   sb->type = SFS_TYPE_ID;
   sb->size = disk_size;
   sb->nentries = min(
-    (((sb->size * BLOCK_SIZE)/10)/sizeof(SFS_ENTRY)),
+    (((sb->size * BLOCK_SIZE)/10)/sizeof(sfs_entry_t)),
     1024);
-  sb->bootstart = 2L + (sb->nentries * sizeof(SFS_ENTRY)) / BLOCK_SIZE;
+  sb->bootstart = 2L + (sb->nentries * sizeof(sfs_entry_t)) / BLOCK_SIZE;
   result = write_disk(disk, 1, 0, BLOCK_SIZE, sb);
   if(result != 0) {
     return ERROR_IO;
   }
   debug_putstr("format: %x blocks=%U entries=%U boot=%U\n", disk, sb->size, sb->nentries, sb->bootstart);
 
-  nentries = (uint)sb->nentries;
+  const uint nentries = (uint)sb->nentries;
 
   // Create root dir
   memset(buff, 0, sizeof(buff));
-  entry = (SFS_ENTRY*)buff;
+  sfs_entry_t* entry = (sfs_entry_t*)buff;
   strncpy((char*)entry->name, ROOT_DIR_NAME, SFS_NAMESIZE);
   entry->flags = T_DIR;
   entry->size = 0;
@@ -1355,7 +1275,7 @@ uint fs_format(uint disk)
 
   // Write empty entries table
   memset(buff, 0, sizeof(buff));
-  for(e=1; e<nentries; e++) {
+  for(uint e=1; e<nentries; e++) {
     write_entry(entry, disk, e);
   }
 
@@ -1365,6 +1285,8 @@ uint fs_format(uint disk)
     return result;
   }
 
+  char k_src_path[32] = {0};
+  char k_dst_path[32] = {0};
   strncpy(k_src_path, disk_to_string(system_disk), sizeof(k_src_path));
   strncat(k_src_path, PATH_SEPARATOR_S, sizeof(k_src_path));
   strncat(k_src_path, (char*)entry->name, sizeof(k_src_path));
