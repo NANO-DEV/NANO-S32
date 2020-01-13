@@ -133,8 +133,8 @@ static uint base = 0xC000; // Base device port
 static uint8_t local_mac[MAC_LEN] = {0}; // Get from network card
 
 // IP protocol network params
-uint8_t local_ip[IP_LEN] = {192,168,0,40}; // Default value
-uint8_t local_gate[IP_LEN] = {192,168,0,1}; // Default value
+uint8_t local_ip[IP_LEN] = {192,168,2,15}; // Default value
+uint8_t local_gate[IP_LEN] = {192,168,2,2}; // Default value
 static uint8_t local_net[IP_LEN] = {255,255,255,0}; // Default value
 
 // Default send/recv port
