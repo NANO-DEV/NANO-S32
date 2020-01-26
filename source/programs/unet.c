@@ -15,7 +15,7 @@ static int unet_recv()
   // Receive in buffer
   char recv_buff[64] = {0};
   net_address_t src_addr;
-  const uint result = 
+  const uint result =
     recv(&src_addr, (uint8_t*)recv_buff, sizeof(recv_buff));
 
   // If result == 0, nothing has been received
@@ -30,7 +30,7 @@ static int unet_recv()
 
     // Show source address and contents
     putstr("Received %s from %u.%u.%u.%u:%u\n", recv_buff,
-      src_addr.ip[0], src_addr.ip[1], 
+      src_addr.ip[0], src_addr.ip[1],
       src_addr.ip[2], src_addr.ip[3],
       src_addr.port);
   }
@@ -39,14 +39,14 @@ static int unet_recv()
 
 
 // Program called with send argument
-static int unet_send(net_address_t* dst_addr, char* message)
+static int unet_send(net_address_t *dst_addr, char *message)
 {
   // Send
-  const uint result = 
+  const uint result =
     send(dst_addr, (uint8_t*)message, strlen(message)+1);
 
   // If result == 0, then data was sent
-  if(result == 0) {
+  if(result == NO_ERROR) {
     putstr("Sent %s to %u.%u.%u.%u:%u\n", message,
       dst_addr->ip[0], dst_addr->ip[1],
       dst_addr->ip[2], dst_addr->ip[3],
@@ -78,7 +78,7 @@ static void unet_chat__clear_current_line()
 }
 
 // Auxiliar function for unet_chat: Handle message reception
-static void unet_chat__receive(net_address_t* remote_chat_addr)
+static void unet_chat__receive(net_address_t *remote_chat_addr)
 {
   // Receive in buffer
   char recv_msg[256] = {0};
@@ -99,7 +99,7 @@ static void unet_chat__receive(net_address_t* remote_chat_addr)
 
     // Print source address and message
     putstr("%d.%d.%d.%d: %s\n",
-      recv_addr.ip[0], recv_addr.ip[1], 
+      recv_addr.ip[0], recv_addr.ip[1],
       recv_addr.ip[2], recv_addr.ip[3],
       recv_msg);
   }
@@ -111,8 +111,8 @@ static void unet_chat__receive(net_address_t* remote_chat_addr)
 #define UNET_CHAT_CONTINUE 0
 #define UNET_CHAT_EXIT     1
 static uint unet_chat__process_local_input(
-  net_address_t* remote_chat_addr, 
-  char* send_msg_buff, size_t send_msg_buff_size)
+  net_address_t *remote_chat_addr,
+  char *send_msg_buff, size_t send_msg_buff_size)
 {
   // Process keyboard input (don't wait for a keypress)
   const uint pressed_key = getkey(GETKEY_WAITMODE_NOWAIT);
@@ -124,13 +124,13 @@ static uint unet_chat__process_local_input(
     send_msg_buff[send_msg_buff_size-1] = 0;
 
     if(strlen(send_msg_buff) > 0) {
-      const uint result = send(remote_chat_addr, 
+      const uint result = send(remote_chat_addr,
         (uint8_t*)send_msg_buff, strlen(send_msg_buff));
 
       unet_chat__clear_current_line();
 
       // If result == 0, then data was sent
-      if(result == 0) {
+      if(result == NO_ERROR) {
         putstr("local: %s\n", send_msg_buff);
       } else {
         // Else, failed
@@ -154,9 +154,9 @@ static uint unet_chat__process_local_input(
 
   // If key is a char: Append it to current user string
   else if(pressed_key >= ' ' && pressed_key <= '}') {
-    const uint current_char_index = 
+    const uint current_char_index =
       min(send_msg_buff_size-2, strlen(send_msg_buff));
-    
+
     // Note in the previous computation of current_char_index
     // Maximum index to append a char is send_msg_buff_size-2
     // because send_msg_buff_size-1 must be always 0
@@ -181,11 +181,11 @@ static uint unet_chat__process_local_input(
 
 
 // Program called with chat argument: Main chat function
-static int unet_chat(net_address_t* remote_addr)
+static int unet_chat(net_address_t *remote_addr)
 {
   // Show chat banner
   putstr("Chat with %u.%u.%u.%u. Press ESC to exit\n",
-    remote_addr->ip[0], remote_addr->ip[1], 
+    remote_addr->ip[0], remote_addr->ip[1],
     remote_addr->ip[2], remote_addr->ip[3]);
 
   // Set reception port
@@ -204,7 +204,7 @@ static int unet_chat(net_address_t* remote_addr)
     // Process local user input, if any
     user_command = unet_chat__process_local_input(
       remote_addr, send_msg_buff, sizeof(send_msg_buff));
-    
+
   } while(user_command != UNET_CHAT_EXIT);
 
   // Exit chat
@@ -220,17 +220,17 @@ static int unet_chat(net_address_t* remote_addr)
 
 
 // Program entry point
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   // Switch functionality depending on call params
   if(argc == 2 && strcmp(argv[1], "recv") == 0) {
-    
+
     // Syntax:
     // unet recv
     // Show received data
 
     return unet_recv();
-    
+
   } else if(argc == 5 && strcmp(argv[1], "send") == 0) {
 
     // Syntax:
@@ -242,7 +242,7 @@ int main(int argc, char* argv[])
     str_to_ip(dst_addr.ip, argv[2]);
     dst_addr.port = stou(argv[3]);
 
-    return unet_send(&dst_addr, argv[4]); 
+    return unet_send(&dst_addr, argv[4]);
 
   } else if(argc == 3 && strcmp(argv[1], "chat") == 0) {
 
@@ -256,11 +256,11 @@ int main(int argc, char* argv[])
     remote_chat_addr.port = UNET_PORT;
 
     return unet_chat(&remote_chat_addr);
-  
+
   } else {
     // Call syntax not recognized
     // Print usage
-    putstr("usage: %s <send <dst_ip> <dst_port> <word> | recv | chat <dst_ip>>\n", 
+    putstr("usage: %s <send <dst_ip> <dst_port> <word> | recv | chat <dst_ip>>\n",
       argv[0]);
   }
 

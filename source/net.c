@@ -41,7 +41,7 @@
 ((((value) & 0xFF) << 8) | (((value)&0xFF00) >> 8))
 
 #define NUM_COMPATIBLE_DEVICES 1
-struct device_id_t {
+static struct device_id_t {
   uint16_t  vendor_id;
   uint16_t  device_id;
 } const ne2k_compatible[NUM_COMPATIBLE_DEVICES] = {
@@ -144,10 +144,10 @@ static uint8_t local_net[IP_LEN] = {255,255,255,0}; // Default value
 static uint16_t rcv_port = UDP_SEND_PORT;
 
 // Buffer to send/receive packets
-typedef struct {
+typedef struct netpacket_t {
   net_address_t addr;
-  size_t      size;
-  uint8_t     buff[256];
+  size_t        size;
+  uint8_t       buff[256];
 } netpacket_t;
 
 static netpacket_t rcv_buff;
@@ -155,7 +155,7 @@ static uint8_t   snd_buff[256] = {0};
 static uint8_t   tmp_buff[256] = {0};
 
 // Ethernet related
-typedef struct {
+typedef struct eth_hdr_t {
   uint8_t  dst[MAC_LEN];
   uint8_t  src[MAC_LEN];
   uint16_t type;
@@ -175,7 +175,7 @@ typedef struct {
 #define ETH_PKT_MAX_LEN  (ETH_HDR_LEN+ETH_VLAN_LEN+ETH_MTU)
 
 // ARP related
-typedef struct {
+typedef struct arp_hdr_t {
   uint16_t hrd;   // format of hardware address
   uint16_t pro;   // format of protocol address
   uint8_t  hln;   // length of hardware address
@@ -205,8 +205,8 @@ typedef struct {
 #define IP_PROTOCOL_UDP  17
 
 // IPv4 Header
-typedef struct {
-  uint8_t  verIhl;
+typedef struct ip_hdr_t {
+  uint8_t  ver_ihl;
   uint8_t  tos;
   uint16_t len;
   uint16_t id;
@@ -219,22 +219,22 @@ typedef struct {
 } ip_hdr_t;
 
 // UDP header
-typedef struct {
-  uint16_t srcPort;
-  uint16_t dstPort;
+typedef struct udp_hdr_t {
+  uint16_t src_port;
+  uint16_t dst_port;
   uint16_t len;
   uint16_t checksum;
 } udp_hdr_t;
 
 // ARP table to hold IP-MAC entries
 #define ARP_TABLE_LEN 8
-struct ARP_TABLE {
+static struct arp_table_struct {
   uint8_t ip[IP_LEN];
   uint8_t mac[MAC_LEN];
 } arp_table[ARP_TABLE_LEN];
 
 // Given an IP address, provide effective IP address to send packet
-static uint8_t* get_effective_ip(uint8_t* ip)
+static uint8_t *get_effective_ip(uint8_t *ip)
 {
   uint i = 0;
 
@@ -253,7 +253,7 @@ static uint8_t* get_effective_ip(uint8_t* ip)
 
 // Given an IP address, provide MAC address
 // if found in the translation table
-static uint8_t* find_mac_in_table(uint8_t* ip)
+static uint8_t *find_mac_in_table(uint8_t *ip)
 {
   // Local IP -> local MAC
   if(memcmp(ip, local_ip, sizeof(local_ip)) == 0) {
@@ -280,10 +280,10 @@ static uint16_t net_checksum_final(uint32_t sum)
 }
 
 // Checksum accumulation function
-static uint32_t net_checksum_acc(uint8_t* data, uint32_t len)
+static uint32_t net_checksum_acc(uint8_t *data, uint32_t len)
 {
   uint32_t sum = 0;
-  uint16_t* p = (uint16_t*)data;
+  uint16_t *p = (uint16_t*)data;
 
   while(len > 1) {
     sum += *p++;
@@ -298,7 +298,7 @@ static uint32_t net_checksum_acc(uint8_t* data, uint32_t len)
 }
 
 // Main checksum function
-static uint16_t net_checksum(uint8_t* data, uint len)
+static uint16_t net_checksum(uint8_t *data, uint len)
 {
   uint32_t sum = net_checksum_acc(data, len);
   return net_checksum_final(sum);
@@ -374,7 +374,7 @@ static uint32_t poly8_lookup[256] =
 };
 
 // Calculate a checksum on a buffer
-static uint32_t crc32_byte(uint8_t* p, uint32_t bytelength)
+static uint32_t crc32_byte(uint8_t *p, uint32_t bytelength)
 {
   uint32_t crc = 0xFFFFFFFFL;
   while(bytelength-- !=0) {
@@ -392,7 +392,7 @@ static void ne2k_page_select(uint page)
 }
 
 // Send network packet (hardware, ne2k)
-static uint ne2k_send(uint8_t* data, size_t len)
+static uint ne2k_send(uint8_t *data, size_t len)
 {
   while(inb(base + NE2K_CR) == 0x26) { // Abort/Complete DMA + Transmit + Start
   }
@@ -422,14 +422,14 @@ static uint ne2k_send(uint8_t* data, size_t len)
   outb(base + NE2K_TBCR1, ((len >> 8) & 0xFF));
   outb(base + NE2K_CR, 0x26); // Abort/Complete DMA + Transmit + Start
 
-  return 0;
+  return NO_ERROR;
 }
 
 // Send network packet (ethernet)
-static uint eth_send(uint8_t* dst_mac, uint type, uint8_t* data, size_t len)
+static uint eth_send(uint8_t *dst_mac, uint type, uint8_t *data, size_t len)
 {
   const size_t head_len = sizeof(eth_hdr_t);
-  eth_hdr_t* eh = (eth_hdr_t*)data;
+  eth_hdr_t *eh = (eth_hdr_t*)data;
 
   memcpy(eh->data, data, len);
   memcpy(eh->dst, dst_mac, sizeof(eh->dst));
@@ -442,12 +442,12 @@ static uint eth_send(uint8_t* dst_mac, uint type, uint8_t* data, size_t len)
 }
 
 // Request mac address given an IP
-static uint arp_request(uint8_t* ip)
+static uint arp_request(uint8_t *ip)
 {
   uint8_t broadcast_mac[MAC_LEN];
   memset(broadcast_mac, 0xFF, sizeof(broadcast_mac));
 
-  arp_hdr_t* ah = (arp_hdr_t*)snd_buff;
+  arp_hdr_t *ah = (arp_hdr_t*)snd_buff;
   ah->hrd = BSWAP_16(ARP_HTYPE_ETHER);
   ah->pro = BSWAP_16(ARP_PTYPE_IP);
   ah->hln = MAC_LEN;
@@ -462,9 +462,9 @@ static uint arp_request(uint8_t* ip)
 }
 
 // Reply an ARP request with local mac address
-static uint arp_reply(uint8_t* mac, uint8_t* ip)
+static uint arp_reply(uint8_t *mac, uint8_t *ip)
 {
-  arp_hdr_t* ah = (arp_hdr_t*)snd_buff;
+  arp_hdr_t *ah = (arp_hdr_t*)snd_buff;
 
   ah->hrd = BSWAP_16(ARP_HTYPE_ETHER);
   ah->pro = BSWAP_16(ARP_PTYPE_IP);
@@ -480,15 +480,15 @@ static uint arp_reply(uint8_t* mac, uint8_t* ip)
 }
 
 // Send IP packet
-static uint ip_send(uint8_t* dst_ip, uint8_t protocol, uint8_t* data, size_t len)
+static uint ip_send(uint8_t *dst_ip, uint8_t protocol, uint8_t *data, size_t len)
 {
   const size_t head_len = sizeof(ip_hdr_t);
-  ip_hdr_t* ih = (ip_hdr_t*)data;
+  ip_hdr_t *ih = (ip_hdr_t*)data;
   static uint id = 0;
   id++;
 
   memcpy(&(data[head_len]), data, len);
-  ih->verIhl = (4<<4) | 5;
+  ih->ver_ihl = (4<<4) | 5;
   ih->tos = 0;
   ih->len = BSWAP_16(len+head_len);
   ih->id = BSWAP_16(id);
@@ -503,13 +503,13 @@ static uint ip_send(uint8_t* dst_ip, uint8_t protocol, uint8_t* data, size_t len
   ih->checksum = BSWAP_16(checksum);
 
   // Try to find hw address in table
-  uint8_t* dst_mac = find_mac_in_table(get_effective_ip(dst_ip));
+  uint8_t *dst_mac = find_mac_in_table(get_effective_ip(dst_ip));
 
   // Unsuccessful
-  if(dst_mac == 0) {
+  if(dst_mac == NULL) {
     debug_putstr("net: IP: Can't find hw address for %d.%d.%d.%d. Aborted\n",
       dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3]);
-    return 1;
+    return ERROR_IO;
   }
 
   return eth_send(dst_mac, ETH_TYPE_IP, data, head_len+len);
@@ -517,13 +517,13 @@ static uint ip_send(uint8_t* dst_ip, uint8_t protocol, uint8_t* data, size_t len
 
 // Ensure mac address is in table
 // Ask for it, if it isn't
-static uint provide_mac_address(uint8_t* ip)
+static uint provide_mac_address(uint8_t *ip)
 {
   // Get effective address
   ip = get_effective_ip(ip);
 
   // Find in table
-  uint8_t* mac = find_mac_in_table(ip);
+  uint8_t *mac = find_mac_in_table(ip);
 
   // If not found, request
   uint i = 0;
@@ -542,17 +542,17 @@ static uint provide_mac_address(uint8_t* ip)
 
   // Unsuccessful
   if(mac == NULL) {
-    return 1;
+    return ERROR_NOT_FOUND;
   }
 
-  return 0;
+  return NO_ERROR;
 }
 
 // Send UDP packet
-static uint udp_send(uint8_t* dst_ip, uint16_t src_port, uint16_t dst_port,
-  uint8_t* data, size_t len)
+static uint udp_send(uint8_t *dst_ip, uint16_t src_port, uint16_t dst_port,
+  uint8_t *data, size_t len)
 {
-  typedef struct {
+  typedef struct udpip_hdr_t {
     uint8_t  sender[4];
     uint8_t  recver[4];
     uint8_t  zero;
@@ -561,11 +561,11 @@ static uint udp_send(uint8_t* dst_ip, uint16_t src_port, uint16_t dst_port,
   } udpip_hdr_t;
 
   // Provide hw addresss before process
-  if(provide_mac_address(dst_ip) != 0 || 
-    provide_mac_address(local_gate) != 0) {
+  if(provide_mac_address(dst_ip) != NO_ERROR ||
+    provide_mac_address(local_gate) != NO_ERROR) {
     debug_putstr("net: can't find hw address for %d.%d.%d.%d. Aborted\n",
       dst_ip[0], dst_ip[1], dst_ip[2], dst_ip[3]);
-    return 1;
+    return ERROR_NOT_FOUND;
   }
 
   // Clamp len
@@ -578,12 +578,12 @@ static uint udp_send(uint8_t* dst_ip, uint16_t src_port, uint16_t dst_port,
   memset(snd_buff, 0, sizeof(snd_buff));
   memcpy(&(snd_buff[iphead_len+head_len]), data, len);
 
-  udp_hdr_t* uh = (udp_hdr_t*)&snd_buff[iphead_len];
-  uh->srcPort = BSWAP_16(src_port);
-  uh->dstPort = BSWAP_16(dst_port);
+  udp_hdr_t *uh = (udp_hdr_t*)&snd_buff[iphead_len];
+  uh->src_port = BSWAP_16(src_port);
+  uh->dst_port = BSWAP_16(dst_port);
   uh->len = BSWAP_16(len+head_len);
 
-  udpip_hdr_t* ih = (udpip_hdr_t*)snd_buff;
+  udpip_hdr_t *ih = (udpip_hdr_t*)snd_buff;
   memcpy(ih->sender, local_ip, sizeof(ih->sender));
   memcpy(ih->recver, dst_ip, sizeof(ih->recver));
   ih->zero = 0;
@@ -595,7 +595,7 @@ static uint udp_send(uint8_t* dst_ip, uint16_t src_port, uint16_t dst_port,
 }
 
 // Process received IP packet
-static void ip_recv_process(uint8_t* buff)
+static void ip_recv_process(uint8_t *buff)
 {
   // Store only one packet
   if(rcv_buff.size > 0) {
@@ -604,21 +604,21 @@ static void ip_recv_process(uint8_t* buff)
   }
 
   // Check UDP packet type
-  ip_hdr_t* ih = (ip_hdr_t*)buff;
+  ip_hdr_t *ih = (ip_hdr_t*)buff;
   if(ih->protocol == IP_PROTOCOL_UDP) {
     size_t head_len = sizeof(ip_hdr_t);
     buff += head_len; // Advance buffer
-    udp_hdr_t* uh = (udp_hdr_t*)buff;
+    udp_hdr_t *uh = (udp_hdr_t*)buff;
     head_len = sizeof(udp_hdr_t);
 
     debug_putstr("net: UDP received: %u.%u.%u.%u:%u to port %u (%u bytes)\n",
       ih->src[0], ih->src[1], ih->src[2], ih->src[3],
-      BSWAP_16(uh->srcPort), BSWAP_16(uh->dstPort), BSWAP_16(uh->len)-head_len);
+      BSWAP_16(uh->src_port), BSWAP_16(uh->dst_port), BSWAP_16(uh->len)-head_len);
 
     // Store it
-    if(BSWAP_16(uh->dstPort) == rcv_port)
+    if(BSWAP_16(uh->dst_port) == rcv_port)
     {
-      rcv_buff.addr.port = BSWAP_16(uh->srcPort);
+      rcv_buff.addr.port = BSWAP_16(uh->src_port);
       rcv_buff.size = min(BSWAP_16(uh->len)-head_len, sizeof(rcv_buff.buff));
       memcpy(rcv_buff.addr.ip, ih->src, sizeof(rcv_buff.addr.ip));
       memcpy(rcv_buff.buff, &buff[head_len], rcv_buff.size);
@@ -628,9 +628,9 @@ static void ip_recv_process(uint8_t* buff)
 }
 
 // Process received ARP packet
-static void arp_recv_process(uint8_t* buff)
+static void arp_recv_process(uint8_t *buff)
 {
-  arp_hdr_t* ah = (arp_hdr_t*)buff;
+  arp_hdr_t *ah = (arp_hdr_t*)buff;
 
   if(ah->hrd == BSWAP_16(ARP_HTYPE_ETHER) &&
     ah->pro == BSWAP_16(ARP_PTYPE_IP)) {
@@ -638,7 +638,7 @@ static void arp_recv_process(uint8_t* buff)
     if(ah->op == BSWAP_16(ARP_OP_REPLY) &&
       memcmp(ah->dpa, local_ip, sizeof(ah->dpa)) == 0) {
       // If exists in table, update entry
-      uint8_t* mac = find_mac_in_table(ah->spa);
+      uint8_t *mac = find_mac_in_table(ah->spa);
       if(mac) {
         memcpy(mac, ah->sha, sizeof(ah->sha));
         debug_putstr("net: ARP: updated: %d.%d.%d.%d : %2x:%2x:%2x:%2x:%2x:%2x\n",
@@ -669,7 +669,7 @@ static void arp_recv_process(uint8_t* buff)
 // Receive network packet
 static void ne2k_receive()
 {
-  struct {
+  struct info_struct {
     uint8_t  rsr;
     uint8_t  next;
     uint16_t len;
@@ -736,7 +736,7 @@ static void ne2k_receive()
     outb(base + NE2K_ISR, NE2K_STAT_RDC);
 
     // Process packet if broadcast or unicast to local_mac
-    eth_hdr_t* eh = (eth_hdr_t*)tmp_buff;
+    eth_hdr_t *eh = (eth_hdr_t*)tmp_buff;
 
     if(!memcmp(eh->dst, local_mac, sizeof(eh->dst)) ||
       !memcmp(eh->dst, arp_table[0].mac, sizeof(eh->dst)))
@@ -782,13 +782,13 @@ void net_handler()
       outb(base + NE2K_ISR, isr);
     }
   }
- 
+
   lapic_eoi();
   return;
 }
 
 // Initialize network
-void net_init()
+void io_net_init()
 {
   // Reset translation table
   memset(arp_table, 0, sizeof(arp_table));
@@ -801,7 +801,7 @@ void net_init()
   network_state = NET_STATE_DISABLED;
   uint net_irq = 0x0B; // network irq
   {
-    PCI_device_t* pdev = NULL;
+    PCI_device_t *pdev = NULL;
 
     // Find a compatible device
     for(uint i=0; i<NUM_COMPATIBLE_DEVICES; i++) {
@@ -822,7 +822,7 @@ void net_init()
       outb(base + NE2K_RESET, inb(base + NE2K_RESET)); // Reset
       wait(250); // Wait
       if((inb(base + NE2K_ISR) == NE2K_STAT_RST)) { // Detect reset
-        debug_putstr("net: ne2000 compatible nic found. base=%x irq=%d\n", 
+        debug_putstr("net: ne2000 compatible nic found. base=%x irq=%d\n",
         base, net_irq);
         network_state = NET_STATE_ENABLED;
       }
@@ -900,18 +900,17 @@ void net_init()
 }
 
 // Send buffer to dst
-uint net_send(net_address_t* dst, uint8_t* buff, size_t len)
+uint io_net_send(net_address_t *dst, uint8_t *buff, size_t len)
 {
   if(network_state == NET_STATE_ENABLED) {
     return udp_send(dst->ip, UDP_SEND_PORT, dst->port,
       buff, len);
-      return 0;
   }
-  return 1;
+  return ERROR_NOT_AVAILABLE;
 }
 
 // Receive data
-uint net_recv(net_address_t* src, uint8_t* buff, size_t buff_size)
+uint io_net_recv(net_address_t *src, uint8_t *buff, size_t buff_size)
 {
   if(network_state == NET_STATE_ENABLED) {
     // Now check if there is something in the system buffer
@@ -927,13 +926,13 @@ uint net_recv(net_address_t* src, uint8_t* buff, size_t buff_size)
 }
 
 // Get network state
-uint net_get_state()
+uint io_net_get_state()
 {
   return network_state;
 }
 
 // Set reception port
-void net_recv_set_port(uint16_t port)
+void io_net_recv_set_port(uint16_t port)
 {
   if(port != rcv_port) {
     // Clear buffer if port is different

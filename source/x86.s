@@ -2,8 +2,6 @@
 
 [bits 32]
 
-;section .text
-
 ; void dump_regs()
 ; Dump register values through debug output
 global dump_regs
@@ -63,19 +61,21 @@ k16_stack_top:
 ; License: http://creativecommons.org/licenses/by-sa/2.0/uk/
 ;
 ; Notes: int32() resets all selectors
-; void _cdelc int32(uint8_t intnum, regs16_t* regs);
+; void _cdelc int32(uint8_t intnum, regs16_t *regs);
 ;
 
 extern lapic_inhibit, lapic_deinhibit
+extern enable_interrupts, disable_interrupts
 
 global int32
 int32: use32
-  cli
+  call disable_interrupts
+  pushfd
   pushad                                 ; save register state to 32bit stack
   call lapic_inhibit                     ; inhibit LAPIC interrupts
   cld                                    ; clear direction flag (copy forward)
   mov  [stack32_ptr], esp                ; save 32bit stack pointer
-  lea  esi, [esp+0x24]                   ; set position of intnum on 32bit stack
+  lea  esi, [esp+0x28]                   ; set position of intnum on 32bit stack
   lodsd                                  ; read intnum into eax
   mov  [ib], al                          ; set interrupt immediate byte from arguments
   mov  esi, [esi]                        ; read regs pointer in esi as source
@@ -111,10 +111,8 @@ r_mode16: use16
   out  0x21, al
   out  0xA1, al
   pop  ax
-  sti
   db 0xCD                                ; opcode of INT instruction with immediate byte
 ib: db 0x00
-  cli
   push ax
   mov  al, 0xFF                          ; mask PIC interrupts
   out  0x21, al
@@ -144,14 +142,15 @@ p_mode32: use32
   lidt [idtr]                            ; restore 32bit idt pointer
   mov  esp, [stack32_ptr]                ; restore 32bit stack pointer
   mov  esi, k16_stack                    ; set copy source to 16bit stack
-  lea  edi, [esp+0x28]                   ; set position of regs pointer on 32bit stack
+  lea  edi, [esp+0x2C]                   ; set position of regs pointer on 32bit stack
   mov  edi, [edi]                        ; use regs pointer in edi as copy destination
   mov  ecx, regs16_t_size                ; set copy size to struct size
   cld                                    ; clear direction flag (copy forward)
   rep  movsb                             ; copy (16bit stack to 32bit stack)
   call lapic_deinhibit                   ; dehinibit LAPIC interrupts
   popad                                  ; restore registers
-  sti
+  popfd
+  call enable_interrupts
   ret                                    ; return to caller
 
 
@@ -189,10 +188,18 @@ IRQ31_wrapper:
   iret
 
 extern net_handler
-global IRQNET_wrapper
-IRQNET_wrapper:
+global IRQNet_wrapper
+IRQNet_wrapper:
   pushad
   call net_handler
+  popad
+  iret
+
+extern sound_handler
+global IRQSound_wrapper
+IRQSound_wrapper:
+  pushad
+  call sound_handler
   popad
   iret
 
@@ -269,7 +276,7 @@ int_handler: use32
 
 .result dd 0                            ; Result of ISR
 
-ALIGN 2
+ALIGN 512
 global disk_buff
 disk_buff:
   times 512 db 0

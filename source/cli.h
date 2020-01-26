@@ -8,6 +8,6 @@
 void cli();
 
 // Execute script file
-void cli_exec_file(char* path);
+void cli_exec_file(char *path);
 
 #endif // _CLI_H

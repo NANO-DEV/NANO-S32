@@ -4,7 +4,7 @@
 #define _PCI_H
 
 // Header type 0x00, general device
-typedef struct {
+typedef struct PCI_device_t {
   uint16_t  vendor_id;
   uint16_t  device_id;
   uint16_t  command;
@@ -39,7 +39,7 @@ typedef struct {
 void pci_init();
 
 // Find device
-PCI_device_t* pci_find_device(uint16_t vendor, uint16_t device);
+PCI_device_t *pci_find_device(uint16_t vendor, uint16_t device);
 
 
 #endif // _PCI_H

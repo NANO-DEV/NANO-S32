@@ -34,7 +34,7 @@
 // SFS 1.0 ID used in superblock.type
 #define SFS_TYPE_ID 0x05F50010
 
-typedef struct {  // On-disk superblock structure
+typedef struct sfs_superblock_t { // On-disk superblock structure
   uint32_t  type;         // Type of file system. Must be SFS_TYPE_ID
   uint32_t  size;         // Total number of block in file system
   uint32_t  nentries;     // Number of entries in entries table
@@ -57,7 +57,7 @@ typedef struct {  // On-disk superblock structure
 // bits  0-21   second of month
 // bits 22-31   months since 2017/01/01 00:00:00
 
-typedef struct {             // On-disk entry structure
+typedef struct sfs_entry_t {    // On-disk entry structure
   uint8_t   flags;              // Entry flags. See above
   uint8_t   name[SFS_NAMESIZE]; // Entry name, must be finished with a 0
   uint32_t  time;               // Last modification date, see format above
@@ -139,7 +139,7 @@ void fs_init_info();
 // Output: info
 // disk refers to the index on currently available disks list.
 // returns number of available disks
-uint fs_get_info(uint disk, fs_info_t* info);
+uint fs_get_info(uint disk, fs_info_t *info);
 
 // Get filesystem entry
 // Output: entry
@@ -149,13 +149,13 @@ uint fs_get_info(uint disk, fs_info_t* info);
 // - absolute or relative to system disk if parent and/or disk are unknown
 // - relative to parent if parent index entry or disk id are provided
 // Returns ERROR_NOT_FOUND if error, entry index otherwise
-uint fs_get_entry(sfs_entry_t* entry, char* path, uint parent, uint disk);
+uint fs_get_entry(sfs_entry_t *entry, char *path, uint parent, uint disk);
 
 // Read file
 // Output: buff
 // Reads count bytes of path file starting at byte offset inside this file.
 // Returns number of readed bytes or ERROR_NOT_FOUND
-uint fs_read_file(void* buff, char* path, uint offset, size_t count);
+uint fs_read_file(void *buff, char *path, uint offset, size_t count);
 
 // Write file flags
 #define WF_CREATE   0x0001 // Create file if it does not exist
@@ -166,7 +166,7 @@ uint fs_read_file(void* buff, char* path, uint offset, size_t count);
 // If target file is not big enough, its size is increased.
 // Depending on flags, path file can be created or truncated.
 // Returns number of written bytes or ERROR_NOT_FOUND
-uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint flags);
+uint fs_write_file(const void *buff, char *path, uint offset, size_t count, uint flags);
 
 // Move entry
 // In the case of directories, they are recursively moved
@@ -174,7 +174,7 @@ uint fs_write_file(const void* buff, char* path, uint offset, size_t count, uint
 // - ERROR_NOT_FOUND if source does not exist
 // - ERROR_EXISTS if destination exists
 // - another value otherwise
-uint fs_move(char* srcpath, char* dstpath);
+uint fs_move(char *srcpath, char *dstpath);
 
 // Copy entry
 // In the case of directories, they are recursively copied
@@ -182,21 +182,21 @@ uint fs_move(char* srcpath, char* dstpath);
 // - ERROR_NOT_FOUND if source does not exist
 // - ERROR_EXISTS if destination exists
 // - another value otherwise
-uint fs_copy(char* srcpath, char* dstpath);
+uint fs_copy(char *srcpath, char *dstpath);
 
 // Delete entry
 // In the case of directories, they are recursively deleted
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - index of deleted entry otherwise
-uint fs_delete(char* path);
+uint fs_delete(char *path);
 
 // Create a directory
 // Returns:
 // - ERROR_NOT_FOUND if parent path does not exist
 // - ERROR_EXISTS if destination already exists
 // - index of created entry otherwise
-uint fs_create_directory(char* path);
+uint fs_create_directory(char *path);
 
 // List directory entries
 // Output: entry
@@ -204,26 +204,29 @@ uint fs_create_directory(char* path);
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - number of elements in ths directory otherwise
-uint fs_list(sfs_entry_t* entry, char* path, uint n);
+uint fs_list(sfs_entry_t *entry, char *path, uint n);
 
 // Create filesystem in disk
 // Deletes all files, creates NSFS filesystem
 // and adds a copy of the kernel
-// Returns 0 on success
+// Returns NO_ERROR on success
 uint fs_format(uint disk);
 
 // Convert fs time to system time_t
 // See fs time format specification above
-uint fs_fstime_to_systime(uint32_t fst, time_t* syst);
+uint fs_fstime_to_systime(uint32_t fst, time_t *syst);
 
 // Convert system time_t to fs time
 // See fs time format specification above
-uint32_t fs_systime_to_fstime(time_t* syst);
+uint32_t fs_systime_to_fstime(time_t *syst);
 
 // Auxiliar functions
-const char* disk_to_string(uint disk);
-uint string_to_disk(const char* str);
+const char *disk_to_string(uint disk);
+uint string_to_disk(const char *str);
 uint blocks_to_MB(uint blocks);
+
+// Debug functions
+uint fs_print_map(char *filename);
 
 #endif // MKFS
 

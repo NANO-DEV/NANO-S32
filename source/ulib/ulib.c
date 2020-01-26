@@ -5,7 +5,7 @@
 #include "syscall.h"
 
 // System call
-uint syscall(uint service, void* param)
+uint syscall(uint service, void *param)
 {
   uint __res = 0;
   __asm__ volatile( "int $49;"
@@ -17,7 +17,7 @@ uint syscall(uint service, void* param)
 }
 
 // x86 specific helper function
-static inline void stosb(void* addr, int data, size_t cnt)
+static inline void stosb(void *addr, int data, size_t cnt)
 {
   __asm__ volatile("cld; rep stosb" :
                "=D" (addr), "=c" (cnt) :
@@ -26,7 +26,7 @@ static inline void stosb(void* addr, int data, size_t cnt)
 }
 
 // Compare strings
-size_t strcmp(const char* str1, const char* str2)
+size_t strcmp(const char *str1, const char *str2)
 {
   size_t i = 0;
   while(str1[i]==str2[i] && str1[i]!=0) {
@@ -36,7 +36,7 @@ size_t strcmp(const char* str1, const char* str2)
 }
 
 // Get string length
-size_t strlen(const char* str)
+size_t strlen(const char *str)
 {
   size_t len = 0;
   while(str[len]) {
@@ -47,7 +47,7 @@ size_t strlen(const char* str)
 
 // Copy string src to dst without exceeding
 // n elements in dst
-size_t strncpy(char* dst, const char* src, size_t n)
+size_t strncpy(char *dst, const char *src, size_t n)
 {
   size_t i = 0;
   while(src[i]!=0 && i+1<n) {
@@ -60,7 +60,7 @@ size_t strncpy(char* dst, const char* src, size_t n)
 
 // Concatenate string src to dst, without exceeding
 // n elements in dst
-size_t strncat(char* dst, const char* src, size_t n)
+size_t strncat(char *dst, const char *src, size_t n)
 {
   size_t j = 0;
   size_t i = strlen(dst);
@@ -74,14 +74,14 @@ size_t strncat(char* dst, const char* src, size_t n)
 }
 
 // Tokenize string
-char* strtok(char* src, char** next, char delim)
+char *strtok(char *src, char **next, char delim)
 {
   while(*src == delim) {
     *src = 0;
     src++;
   }
 
-  char* s = src;
+  char *s = src;
 
   while(*s) {
     if(*s == delim) {
@@ -97,7 +97,7 @@ char* strtok(char* src, char** next, char delim)
 }
 
 // Find char in string
-size_t strchr(const char* str, char c)
+size_t strchr(const char *str, char c)
 {
   size_t n = 0;
   while(str[n]) {
@@ -110,7 +110,7 @@ size_t strchr(const char* str, char c)
 }
 
 // Parse string uint
-uint stou(char* src)
+uint stou(char *src)
 {
   uint base = 10;
   uint value = 0;
@@ -132,17 +132,17 @@ uint stou(char* src)
 }
 
  // Set n bytes from dst to c
-void* memset(void* dst, int c, size_t n)
+void *memset(void *dst, int c, size_t n)
 {
   stosb(dst, c, n);
   return dst;
 }
 
 // Copy n bytes from src to dst
-size_t memcpy(void* dst, const void* src, uint n)
+size_t memcpy(void *dst, const void *src, uint n)
 {
-  uint8_t* vdst = dst;
-  const uint8_t* vsrc = src;
+  uint8_t *vdst = dst;
+  const uint8_t *vsrc = src;
   const uint rdir = (src>dst)?0:1;
 
   size_t i = 0;
@@ -154,10 +154,10 @@ size_t memcpy(void* dst, const void* src, uint n)
 }
 
 // Compare n bytes from mem1 and mem2
-size_t memcmp(const void* mem1, const void* mem2, size_t n)
+size_t memcmp(const void *mem1, const void *mem2, size_t n)
 {
-  const uint8_t* vmem1 = mem1;
-  const uint8_t* vmem2 = mem2;
+  const uint8_t *vmem1 = mem1;
+  const uint8_t *vmem2 = mem2;
 
   for(size_t i=0; i<n; i++) {
     if(vmem1[i] != vmem2[i]) {
@@ -168,13 +168,13 @@ size_t memcmp(const void* mem1, const void* mem2, size_t n)
 }
 
 // Allocate memory
-void* malloc(size_t size)
+void *malloc(size_t size)
 {
   return (void*)syscall(SYSCALL_MEM_ALLOCATE, &size);
 }
 
 // Free memory
-void mfree(void* ptr)
+void mfree(void *ptr)
 {
   syscall(SYSCALL_MEM_FREE, ptr);
 }
@@ -191,7 +191,7 @@ void clear_screen()
 // %s (char*), %c (char)
 #define D_STR_SIZE 24
 typedef void (putcharf_t)(char);
-static void formatstr_putf(const char* format, uint* args, putcharf_t putchar)
+static void formatstr_putf(const char *format, uint *args, putcharf_t putchar)
 {
   size_t char_count = 0;
 
@@ -276,19 +276,19 @@ static void formatstr_putf(const char* format, uint* args, putcharf_t putchar)
 }
 
 // Format a string (auxiliar elements)
-static char* ststr;
+static char *ststr;
 static size_t ststr_size;
 static void stcatchar(char c)
-{ 
+{
   ststr[min(strlen(ststr), ststr_size-1)] = c;
 }
 // Format a string
-void formatstr(char* str, size_t size, char* format, ...)
+void formatstr(char *str, size_t size, char *format, ...)
 {
   ststr = str;
   ststr_size = size;
   memset(ststr, 0, size);
-  formatstr_putf(format, (uint*)&format+1, 
+  formatstr_putf(format, (uint*)&format+1,
     *(putcharf_t*)&stcatchar);
 
   ststr[min(strlen(ststr), size-1)] = 0;
@@ -301,7 +301,7 @@ static void serial_puc(char c)
 }
 
 // Put formatted string serial port
-void serial_putstr(const char* format, ...)
+void serial_putstr(const char *format, ...)
 {
   formatstr_putf(format, (uint*)&format+1,
     *(putcharf_t*)&serial_puc);
@@ -315,7 +315,7 @@ static void debug_puc(char c)
 }
 
 // Put formatted string debug output
-void debug_putstr(const char* format, ...)
+void debug_putstr(const char *format, ...)
 {
   formatstr_putf(format, (uint*)&format+1,
     *(putcharf_t*)&debug_puc);
@@ -341,7 +341,7 @@ void putc_attr(uint col, uint row, char c, uint8_t attr)
 }
 
 // Put formatted string in screen
-void putstr(const char* format, ...)
+void putstr(const char *format, ...)
 {
   formatstr_putf(format, (uint*)&format+1,
     *(putcharf_t*)&putc);
@@ -349,7 +349,7 @@ void putstr(const char* format, ...)
 }
 
 // Get cursor position
-void get_cursor_pos(uint* col, uint* row)
+void get_cursor_pos(uint *col, uint *row)
 {
   syscall_porition_t p = {0};
   syscall(SYSCALL_IO_GET_CURSOR_POS, &p);
@@ -367,7 +367,7 @@ void set_cursor_pos(uint col, uint row)
 }
 
 // Show or hide cursor
-void set_show_cursor(uint show)
+void set_show_cursor(bool show)
 {
   syscall(SYSCALL_IO_SET_SHOW_CURSOR, &show);
 }
@@ -381,7 +381,7 @@ uint getkey(uint mode)
 // Get a string from user. Returns when RETURN key is
 // pressed. Unused str characters are set to 0.
 // Returns number of elements in str
-int getstr(char* str, size_t n)
+int getstr(char *str, size_t n)
 {
   uint col=0, row=0;
   uint i = 0;
@@ -459,7 +459,7 @@ int getstr(char* str, size_t n)
 }
 
 // Get filesystem info
-uint get_fsinfo(uint disk_index, fs_info_t* info)
+uint get_fsinfo(uint disk_index, fs_info_t *info)
 {
   syscall_fsinfo_t fi = {0};
   fi.disk_index = disk_index;
@@ -468,7 +468,7 @@ uint get_fsinfo(uint disk_index, fs_info_t* info)
 }
 
 // Get filesystem entry
-uint get_entry(fs_entry_t* entry, char* path, uint parent, uint disk)
+uint get_entry(fs_entry_t *entry, char *path, uint parent, uint disk)
 {
   syscall_fsentry_t fi = {0};
   fi.entry = entry;
@@ -479,7 +479,7 @@ uint get_entry(fs_entry_t* entry, char* path, uint parent, uint disk)
 }
 
 // Read file
-uint read_file(void* buff, char* path, uint offset, uint count)
+uint read_file(void *buff, char *path, uint offset, uint count)
 {
   syscall_fsrwfile_t fi = {0};
   fi.buff = buff;
@@ -491,7 +491,7 @@ uint read_file(void* buff, char* path, uint offset, uint count)
 }
 
 // Write file
-uint write_file(void* buff, char* path, uint offset, uint count, uint flags)
+uint write_file(void *buff, char *path, uint offset, uint count, uint flags)
 {
   syscall_fsrwfile_t fi = {0};
   fi.buff = buff;
@@ -503,7 +503,7 @@ uint write_file(void* buff, char* path, uint offset, uint count, uint flags)
 }
 
 // Move entry
-uint move(char* srcpath, char* dstpath)
+uint move(char *srcpath, char *dstpath)
 {
   syscall_fssrcdst_t fi = {0};
   fi.src = srcpath;
@@ -512,7 +512,7 @@ uint move(char* srcpath, char* dstpath)
 }
 
 // Copy entry
-uint copy(char* srcpath, char* dstpath)
+uint copy(char *srcpath, char *dstpath)
 {
   syscall_fssrcdst_t fi = {0};
   fi.src = srcpath;
@@ -521,19 +521,19 @@ uint copy(char* srcpath, char* dstpath)
 }
 
 // Delete entry
-uint delete(char* path)
+uint delete(char *path)
 {
   return syscall(SYSCALL_FS_DELETE, path);
 }
 
 // Create a directory
-uint create_directory(char* path)
+uint create_directory(char *path)
 {
   return syscall(SYSCALL_FS_CREATE_DIRECTORY, path);
 }
 
 // List dir entries
-uint list(fs_entry_t* entry, char* path, uint n)
+uint list(fs_entry_t *entry, char *path, uint n)
 {
   syscall_fslist_t fi = {0};
   fi.entry = entry;
@@ -549,7 +549,7 @@ uint format(uint disk)
 }
 
 // Get current system date and time
-void get_datetime(time_t* t)
+void get_datetime(time_t *t)
 {
   syscall(SYSCALL_DATETIME_GET, t);
 }
@@ -566,17 +566,17 @@ void wait(uint ms)
   const uint start_time = get_timer();
   const uint finish_time = start_time+ms;
   while(get_timer() < finish_time) {
-    __asm__ __volatile__("nop");
+    __asm__ volatile("nop");
   }
 }
 
 // Convert string to IP
-void str_to_ip(uint8_t* ip, const char* str)
+void str_to_ip(uint8_t *ip, const char *str)
 {
   uint i = 0;
   char tok_str[24] = {0};
-  char* tok = tok_str;
-  char* nexttok = tok;
+  char *tok = tok_str;
+  char *nexttok = tok;
   strncpy(tok_str, str, sizeof(tok_str));
 
   // Tokenize
@@ -590,16 +590,16 @@ void str_to_ip(uint8_t* ip, const char* str)
 }
 
 // Convert IP to string
-char* ip_to_str(char* str, uint8_t* ip)
+char *ip_to_str(char *str, uint8_t *ip)
 {
-  formatstr(str, 16, "%u.%u.%u.%u", 
+  formatstr(str, 16, "%u.%u.%u.%u",
     ip[0], ip[1], ip[2], ip[3]);
   return str;
 }
 
 // Get and remove from buffer received data.
 // src and buff are filled by the function
-uint recv(net_address_t* src, uint8_t* buff, size_t buff_size)
+uint recv(net_address_t *src, uint8_t *buff, size_t buff_size)
 {
   syscall_netop_t no = {0};
   no.addr = src;
@@ -609,7 +609,7 @@ uint recv(net_address_t* src, uint8_t* buff, size_t buff_size)
 }
 
 // Send buffer to dst
-uint send(net_address_t* dst, uint8_t* buff, size_t len)
+uint send(net_address_t *dst, uint8_t *buff, size_t len)
 {
   syscall_netop_t no = {0};
   no.addr = dst;
@@ -623,4 +623,23 @@ uint send(net_address_t* dst, uint8_t* buff, size_t len)
 void recv_set_port(uint16_t port)
 {
   syscall(SYSCALL_NET_PORT, &port);
+}
+
+// Play sound file, non blocking
+uint sound_play(const char *wav_file)
+{
+  return syscall(SYSCALL_SOUND_PLAY, (void*)wav_file);
+}
+
+// Return 1 if a sound is playing
+// Return 0 otherwise
+bool sound_is_playing()
+{
+  return syscall(SYSCALL_SOUND_IS_PLAYING, NULL);
+}
+
+// Stop playing sound
+void sound_stop()
+{
+  syscall(SYSCALL_SOUND_STOP, NULL);
 }

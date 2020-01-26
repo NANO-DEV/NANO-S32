@@ -48,7 +48,7 @@ enum R_DEF {
 };
 
 // CONST Registers data
-struct RDATA {
+struct reg_data_struct {
   char  name[5];
   uint  type;
   uint  encoding;
@@ -125,13 +125,15 @@ enum I_DEF {
 
 // CONST Instructions data
 #define I_MAX_OPS 2 // Max instruction operands
-struct idata {
+typedef struct idata_t {
   char  mnemonic[6];
   uint  opcode;
   uint  nops;     // Number of operands
   uint  op_type[I_MAX_OPS]; // Type of operands
   uint  op_value[I_MAX_OPS]; // Restricted value
-} const i_data[I_COUNT] =
+} idata_t;
+
+const idata_t i_data[I_COUNT] =
 {
   {"push", 0x50, 1, {O_RD,  O_ANY},   {R_ANY, 0    }},
   {"pop",  0x58, 1, {O_RD,  O_ANY},   {R_ANY, 0    }},
@@ -190,21 +192,21 @@ struct idata {
 
 // Symbols reference table
 #define S_MAX_REF 32
-struct s_ref {
-  uint   offset;
-  uint   symbol;
-  uint   operand;
-  uint   instr_id;
-  struct idata instruction;
+struct s_ref_struct {
+  uint    offset;
+  uint    symbol;
+  uint    operand;
+  uint    instr_id;
+  idata_t instruction;
 } s_ref[S_MAX_REF];
 
 // Is string uint?
-uint sisu(char* src)
+bool sisu(char *src)
 {
   uint base = 10;
 
   if(!src[0]) {
-    return 0;
+    return FALSE;
   }
 
   // Is hex?
@@ -218,15 +220,15 @@ uint sisu(char* src)
       *src>='a'? 0xA+*src-'a' : 0xA+*src-'A';
 
     if(digit>=base) {
-      return 0;
+      return FALSE;
     }
     src++;
   }
-  return 1;
+  return TRUE;
 }
 
 // Encode and write instruction to buffer
-uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
+uint encode_instruction(uint8_t *buffer, uint offset, uint id, uint *op)
 {
   switch(id) {
 
@@ -288,7 +290,7 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
       buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
@@ -301,7 +303,7 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
       buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
@@ -335,7 +337,7 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
       buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
@@ -348,7 +350,7 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
       buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
@@ -361,8 +363,8 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
-      buffer[offset-6], buffer[offset-5], buffer[offset-4], 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
+      buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
   }
@@ -386,8 +388,8 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
-      buffer[offset-6], buffer[offset-5], buffer[offset-4], 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
+      buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
   }
@@ -399,8 +401,8 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
-      buffer[offset-6], buffer[offset-5], buffer[offset-4], 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
+      buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
   }
@@ -435,8 +437,8 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
-      buffer[offset-6], buffer[offset-5], buffer[offset-4], 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
+      buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
   }
@@ -452,8 +454,8 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
     buffer[offset++] = (op[1] >> 8 ) & 0xFF;
     buffer[offset++] = (op[1] >> 16) & 0xFF;
     buffer[offset++] = (op[1] >> 24) & 0xFF;
-    debug_putstr(": %2x %2x %2x %2x %2x %2x", 
-      buffer[offset-6], buffer[offset-5], buffer[offset-4], 
+    debug_putstr(": %2x %2x %2x %2x %2x %2x",
+      buffer[offset-6], buffer[offset-5], buffer[offset-4],
       buffer[offset-3], buffer[offset-2], buffer[offset-1]);
     break;
   }
@@ -492,7 +494,7 @@ uint encode_instruction(uint8_t* buffer, uint offset, uint id, uint* op)
 }
 
 // Encode and write data to buffer
-uint encode_data(uint8_t* buffer, uint offset, uint type, uint value)
+uint encode_data(uint8_t *buffer, uint offset, uint type, uint value)
 {
   switch(type) {
 
@@ -525,7 +527,7 @@ uint encode_data(uint8_t* buffer, uint offset, uint type, uint value)
 }
 
 // Given a file and offset, returns a file line and offset to next line start
-static uint read_line(char* buff, uint buff_size, char* file, uint offset)
+static uint read_line(char *buff, uint buff_size, char *file, uint offset)
 {
   // Clear buffer and read
   memset(buff, 0, buff_size);
@@ -569,7 +571,7 @@ static uint read_line(char* buff, uint buff_size, char* file, uint offset)
 }
 
 // Given a text line, returns token count and token start vectors
-static uint tokenize_line(char* buff, uint size, char* tokv[], uint max_tok)
+static uint tokenize_line(char *buff, uint size, char *tokv[], uint max_tok)
 {
   uint tokc = 0;
   tokv[0] = buff;
@@ -607,7 +609,7 @@ static uint tokenize_line(char* buff, uint size, char* tokv[], uint max_tok)
 }
 
 // Find or add symbol to table
-uint find_or_add_symbol(char* name)
+uint find_or_add_symbol(char *name)
 {
   for(uint s=0; s<S_MAX; s++) {
     if(s_table[s].name[0] == 0) {
@@ -623,7 +625,7 @@ uint find_or_add_symbol(char* name)
 }
 
 // Find symbol in table and return index
-uint find_symbol(char* name)
+uint find_symbol(char *name)
 {
   for(uint s=0; s<S_MAX; s++) {
     if(s_table[s].name[0] == 0) {
@@ -639,7 +641,7 @@ uint find_symbol(char* name)
 
 // Append a symbol reference to symbol references table
 void append_symbol_ref(uint symbol, uint operand, uint offset,
-  uint instr_id, struct idata* instruction)
+  uint instr_id, idata_t *instruction)
 {
   for(uint r=0; r<S_MAX_REF; r++) {
     if(s_ref[r].offset == 0) {
@@ -659,11 +661,11 @@ void append_symbol_ref(uint symbol, uint operand, uint offset,
 }
 
 // Find matching instruction and return id
-uint find_instruction(struct idata* ci)
+uint find_instruction(idata_t *ci)
 {
   for(uint id=0; id<I_COUNT; id++) {
     // Check same name and number of args
-    if(!strcmp(ci->mnemonic, i_data[id].mnemonic) && 
+    if(!strcmp(ci->mnemonic, i_data[id].mnemonic) &&
       ci->nops==i_data[id].nops) {
 
       // Assume match
@@ -697,7 +699,7 @@ uint find_instruction(struct idata* ci)
 }
 
 // Program entry point
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   // Check args
   if(argc != 2) {
@@ -729,7 +731,7 @@ int main(int argc, char* argv[])
 
   // Input file buffer and offset
   char fbuff[2048] = {0};
-  uint foffset = 0;     
+  uint foffset = 0;
   // Process input file line by line
   uint fline = 1;
   while((foffset=read_line(fbuff, sizeof(fbuff), argv[1], foffset))!=EOF) {
@@ -742,8 +744,8 @@ int main(int argc, char* argv[])
     }
 
     // Tokenize line
-    char* tokv[32] = {NULL};
-    const uint tokc = 
+    char *tokv[32] = {NULL};
+    const uint tokc =
       tokenize_line(fbuff, sizeof(fbuff), tokv, sizeof(tokv)/sizeof(char*));
 
     // Check special directives
@@ -759,7 +761,7 @@ int main(int argc, char* argv[])
       s_table[symbol].value = ooffset;
       s_table[symbol].type = S_LABEL;
 
-      debug_putstr("label %s = ORG+%x\n", 
+      debug_putstr("label %s = ORG+%x\n",
         s_table[symbol].name, s_table[symbol].value);
     }
 
@@ -769,12 +771,12 @@ int main(int argc, char* argv[])
       s_table[symbol].value = ooffset;
       s_table[symbol].type = S_DATAD;
 
-      debug_putstr("dword %s = ORG+%x : ", 
+      debug_putstr("dword %s = ORG+%x : ",
         s_table[symbol].name, s_table[symbol].value);
 
       for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset = encode_data(obuff, ooffset, 
+        ooffset = encode_data(obuff, ooffset,
           s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
@@ -784,12 +786,12 @@ int main(int argc, char* argv[])
       s_table[symbol].value = ooffset;
       s_table[symbol].type = S_DATAW;
 
-      debug_putstr("word %s = ORG+%x : ", 
+      debug_putstr("word %s = ORG+%x : ",
         s_table[symbol].name, s_table[symbol].value);
 
       for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset = encode_data(obuff, ooffset, 
+        ooffset = encode_data(obuff, ooffset,
           s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
@@ -799,12 +801,12 @@ int main(int argc, char* argv[])
       s_table[symbol].value = ooffset;
       s_table[symbol].type = S_DATAB;
 
-      debug_putstr("byte %s = ORG+%x : ", 
+      debug_putstr("byte %s = ORG+%x : ",
         s_table[symbol].name, s_table[symbol].value);
 
       for(uint n=2; n<tokc; n++) {
         debug_putstr("%2x ", stou(tokv[n]));
-        ooffset = encode_data(obuff, ooffset, 
+        ooffset = encode_data(obuff, ooffset,
           s_table[symbol].type, stou(tokv[n]));
       }
       debug_putstr("\n");
@@ -812,8 +814,8 @@ int main(int argc, char* argv[])
 
     // Check instructions
     else if(tokc) {
-      uint   symbol_id=0xFFFF, nas=0xFFFF;
-      struct idata ci;
+      uint symbol_id=0xFFFF, nas=0xFFFF;
+      idata_t ci;
 
       // Get instruction info
       strncpy(ci.mnemonic, tokv[0], sizeof(ci.mnemonic));
@@ -933,18 +935,29 @@ int main(int argc, char* argv[])
   // Write output file
   if(ooffset != 0) {
     debug_putstr("Write file: %s, %ubytes\n", ofile, ooffset);
-    write_file(obuff, ofile, 0, ooffset, FWF_CREATE|FWF_TRUNCATE);
-    debug_putstr("Done\n\n", ofile, ooffset);
+    uint result = write_file(obuff, ofile, 0, ooffset, FWF_CREATE|FWF_TRUNCATE);
+    if(result != ooffset) {
+      putstr("Error writting file\n");
+      debug_putstr("Write file failed\n");
+      return 1;
 
-    // Dump saved file
-    debug_putstr("Dump: \n", ofile, ooffset);
+    } else {
+      debug_putstr("Done\n\n", ofile, ooffset);
 
-    read_file(obuff, ofile, 0, ooffset);
-    for(uint i=0; i<ooffset; i++) {
-      debug_putstr("%2x ", obuff[i]);
+      // Dump saved file
+      debug_putstr("Dump: \n", ofile, ooffset);
+
+      result = read_file(obuff, ofile, 0, ooffset);
+      if(result == ooffset) {
+        for(uint i=0; i<result; i++) {
+          debug_putstr("%2x ", obuff[i]);
+        }
+        
+        debug_putstr("\n\n");
+      } else {
+        debug_putstr("Dump file contents failed\n");
+      }
     }
-
-    debug_putstr("\n\n");
   }
 
   return 0;

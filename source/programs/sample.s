@@ -7,7 +7,7 @@ main:
   push ebx          ; save reg state
   push ecx
 
-  ; Clear screen syscall  
+  ; Clear screen syscall
   mov  ebx, [cls]   ; ebx param to syscall: service code
   mov  ecx, 0x00    ; ecx param to syscall: unused
   int  0x31         ; make syscall

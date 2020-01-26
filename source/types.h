@@ -17,7 +17,7 @@ typedef unsigned short uint16_t;
 typedef unsigned int   uint32_t;
 
 // Complex types
-typedef struct {
+typedef struct time_t {
   uint  year;
   uint  month;
   uint  day;
@@ -25,5 +25,12 @@ typedef struct {
   uint  minute;
   uint  second;
  } time_t;
+
+// Null pointer
+#define NULL (0)
+
+typedef _Bool bool;
+#define FALSE 0
+#define TRUE  1
 
 #endif // _TYPES_H

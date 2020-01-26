@@ -20,7 +20,7 @@
 
 // This buffer holds a copy of screen chars
 // Screen is only updated when it's actually needed
-static char* screen_buff = 0;
+static char *screen_buff = NULL;
 
 // Check the local screen buffer before actually updating
 // the screen
@@ -42,7 +42,7 @@ static void editor_putchar(uint col, uint row, char c)
 // Initial line of input string can be:
 // - shown at given row if mode==SHOW_CURRENT
 // - just skipped if mode==SKIP_CURRENT
-static char* next_line(uint mode, uint row, char* line)
+static char *next_line(uint mode, uint row, char *line)
 {
   // Process string until next line or end of string
   // and show text if needed
@@ -71,7 +71,7 @@ static char* next_line(uint mode, uint row, char* line)
 // Shows buffer in editor area starting at a given
 // number of line of buffer.
 // It's recommended to hide cursor before calling this function
-void show_buffer_at_line(char* buff, uint n)
+void show_buffer_at_line(char *buff, uint n)
 {
   // Skip buffer until required line number
   uint l = 0;
@@ -92,7 +92,7 @@ void show_buffer_at_line(char* buff, uint n)
 
 // Convert linear buffer offset (uint offset)
 // to line and col (output params)
-void buffer_offset_to_linecol(char* buff, uint offset, uint* col, uint* line)
+void buffer_offset_to_linecol(char *buff, uint offset, uint *col, uint *line)
 {
   *col = 0;
   *line = 0;
@@ -115,7 +115,7 @@ void buffer_offset_to_linecol(char* buff, uint offset, uint* col, uint* line)
 
 // Converts line and col (input params) to
 // linear buffer offset (return value)
-uint linecol_to_buffer_offset(char* buff, uint col, uint line)
+uint linecol_to_buffer_offset(char *buff, uint col, uint line)
 {
   uint offset = 0;
   uint c = 0;
@@ -144,7 +144,7 @@ uint linecol_to_buffer_offset(char* buff, uint col, uint line)
 // Convert linear buffer offset (uint offset)
 // to file line
 // Only function which is not screen space
-uint buffer_offset_to_fileline(char* buff, uint offset)
+uint buffer_offset_to_fileline(char *buff, uint offset)
 {
   uint line = 0;
   for(; offset>0 && *buff; offset--, buff++) {
@@ -157,7 +157,7 @@ uint buffer_offset_to_fileline(char* buff, uint offset)
 }
 
 // Program entry point
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   // Chck usage
   if(argc != 2) {
@@ -170,8 +170,8 @@ int main(int argc, char* argv[])
   }
 
   // Allocate fixed size text buffer
-  char* buff = malloc(0xFFFF);
-  if(buff == 0) {
+  char *buff = malloc(0xFFFF);
+  if(!buff) {
     putstr("Error: can't allocate memory\n");
     return 1;
   }
@@ -241,7 +241,7 @@ int main(int argc, char* argv[])
   memset(screen_buff, 0, (SCREEN_WIDTH*(SCREEN_HEIGHT-1)));
 
   // Write title
-  const char* title_info = "L:     F1:Save ESC:Exit";
+  const char *title_info = "L:     F1:Save ESC:Exit";
   uint title_char = 0;
   for(title_char=0; title_char<strlen(argv[1]); title_char++) {
     putc_attr(title_char, 0, argv[1][title_char], TITLE_ATTRIBUTES);
@@ -251,7 +251,7 @@ int main(int argc, char* argv[])
   }
   for(; title_char<SCREEN_WIDTH; title_char++) {
     putc_attr(title_char, 0,
-      title_info[title_char+strlen(title_info)-SCREEN_WIDTH], 
+      title_info[title_char+strlen(title_info)-SCREEN_WIDTH],
       TITLE_ATTRIBUTES);
   }
 
@@ -289,7 +289,7 @@ int main(int argc, char* argv[])
 
     // Key F1: Save
     } else if(k == KEY_F1) {
-      const uint result = write_file(buff, argv[1], 0, 
+      const uint result = write_file(buff, argv[1], 0,
         buff_size, FWF_CREATE|FWF_TRUNCATE);
 
       // Update state indicator
@@ -349,7 +349,7 @@ int main(int argc, char* argv[])
     // Backspace key: delete char before cursor and move cursor there
     } else if(k == KEY_BACKSPACE) {
       if(buff_cursor_offset > 0) {
-        memcpy(buff+buff_cursor_offset-1, buff+buff_cursor_offset, 
+        memcpy(buff+buff_cursor_offset-1, buff+buff_cursor_offset,
           buff_size-buff_cursor_offset);
         buff_size--;
         putc_attr(strlen(argv[1]), 0, '*', TITLE_ATTRIBUTES);
@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
     // Del key: delete char at cursor
     } else if(k == KEY_DEL) {
       if(buff_cursor_offset < buff_size-1) {
-        memcpy(buff+buff_cursor_offset, buff+buff_cursor_offset+1, 
+        memcpy(buff+buff_cursor_offset, buff+buff_cursor_offset+1,
           buff_size-buff_cursor_offset-1);
         buff_size--;
         putc_attr(strlen(argv[1]), 0, '*', TITLE_ATTRIBUTES);
@@ -374,7 +374,7 @@ int main(int argc, char* argv[])
       if(k == KEY_TAB) {
         k = '\t';
       }
-      memcpy(buff+buff_cursor_offset+1, buff+buff_cursor_offset, 
+      memcpy(buff+buff_cursor_offset+1, buff+buff_cursor_offset,
         buff_size-buff_cursor_offset);
       *(buff + buff_cursor_offset++) = k;
       buff_size++;
@@ -392,7 +392,7 @@ int main(int argc, char* argv[])
     // Update line number in title
     // Compute bcd value (reversed)
     char line_ibcd[4]={0}; // To store line number digits
-    uint ibcdt = 
+    uint ibcdt =
       min(9999, buffer_offset_to_fileline(buff, buff_cursor_offset)+1);
     for(uint i=0; i<4; i++) {
       line_ibcd[i] = ibcdt%10;

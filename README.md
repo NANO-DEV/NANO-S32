@@ -9,6 +9,7 @@ System requirements:
 * VGA graphics card
 
 Realtek 8029AS network card is supported.
+Sound Blaster 16 sound card is supported.
 
 Developer notes:
 This software is a hobby operating system. Creator makes no warranty for its use and assumes no responsibility for any errors which may appear in this document.
@@ -20,7 +21,7 @@ This operating system is composed of several components, detailed in this sectio
 The kernel is the core of the operating system. It connects the application software to the hardware of a computer. The kernel manages memory access for user programs, determines how programs get access to hardware resources, and organizes the data for long-term non-volatile storage with file systems on disks. This operating system kernel is written in C and assembler.
 
 #### Program execution
-The operating system provides an interface between an application program and the computer hardware, so that an application program can interact with the hardware through procedures programmed into the operating system. To do so, the operating system provides a set of services which simplify development and execution of application programs. 
+The operating system provides an interface between an application program and the computer hardware, so that an application program can interact with the hardware through procedures programmed into the operating system. To do so, the operating system provides a set of services which simplify development and execution of application programs.
 
 To execute an application program the operating system assigns memory space and other resources, loads program binary code into memory, and initiates execution of the application program which then interacts with the user and with hardware devices.
 
@@ -64,7 +65,6 @@ The building process is expected to be executed in a Linux system. In Windows 10
 1. Install required software:
     * make, gcc, nasm to build the operating system and user programs
     * optionally install qemu x86 emulator to test the images in a virtual machine
-    * optionally install exuberant-ctags to generate tags
     * optionally use dd to write disk images on storage devices
     ```
     sudo apt-get install gcc nasm make
@@ -87,13 +87,13 @@ The tree contains the following directories:
 3. Build: Run `make` from the root directory to build everything. Images will be generated in the `images` directory. Optionally, `Makefile` and `source/Makefile` files can be customized.
 
 ## Testing
-After building, run `make qemu` (linux) or `qemu.bat` (windows) from the root directory to test the operating system in qemu. Other virtual machines have been successfully tested. To test the system using VirtualBox, create a new `Other/DOS` machine and start it with `images/os_fd.img` as floppy image.
+After building, run `make qemu` (linux) or `qemu.bat` (windows) from the root directory to test the operating system in qemu. Other virtual machines have been successfully tested. To test the system using VirtualBox, create a new `Other/DOS` machine and start it with `images/os_fd.img` as floppy image. The Sound Blaster driver seems not to work in VirtualBox.
 
-The network support has been only tested in qemu under Windows, using the Tap-windows driver provided [here](https://openvpn.net/index.php/download/community-downloads.html). This virtual device must be renamed to `tap` and bridged to the actual nic in order to make the default `qemu.bat` script work as expected.
+The network support has been only tested in qemu. In Windows it's possible to have internet access using the Tap-windows driver provided [here](https://openvpn.net/index.php/download/community-downloads.html). This virtual device must be renamed to `tap` and bridged to the actual nic in order to make the default `qemu.bat` script work as expected.
 
-The operating system outputs debug information through the first serial port in real time. This can be useful for developers. This serial port is configured to work at 2400 bauds, 8 data bits, odd parity and 1 stop bit.
+The operating system outputs debug information through the first serial port in real time. This can be useful for developers. This serial port is configured to work at 115200 bauds, 8 data bits, odd parity and 1 stop bit.
 
-Using the provided qemu scripts, the serial port is automatically mapped to the process standard input/output. For VirtualBox users, it is possible for example to telnet from putty if COM1 is set to TCP mode without a pipe, and the same port is specified in both programs.
+Using the provided qemu scripts, the serial port is automatically mapped to the process standard input/output. For VirtualBox users, it is possible for example to telnet from putty if COM1 is set to TCP mode without a pipe, and the same port is specified in both programs or to dump the serial port output to a text file.
 
 The system can operate real hardware if images are written to physical disks. Writing images to disks to test them in real hardware is dangerous and can cause loss of data or boot damage, among other undesired things, in all involved computers. So, it is not recommended to proceed unless this risk is understood and assumed. To write images to physical disks, `dd` can be used in linux:
 ```
@@ -243,7 +243,7 @@ The easiest way develop new user programs is thorugh corss development:
     #include "types.h"
     #include "ulib/ulib.h"
 
-    int main(int argc, char* argv[])
+    int main(int argc, char *argv[])
     {
       return 0;
     }

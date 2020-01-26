@@ -36,10 +36,10 @@ void rblock(uint sec, void *buf);
 int main(int argc, char *argv[])
 {
   int i, f, e, b, cc, fd;
-  char* name;
+  char *name;
   char buf[BLOCK_SIZE];
   sfs_superblock_t sfs_sb;
-  sfs_entry_t* sfs_entry;
+  sfs_entry_t *sfs_entry;
 
   // Check architecture and fs definition sizes
   assert(sizeof(uint8_t)  == 1);
@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
 }
 
 // Write block
-void wblock(uint bindex, void* buf)
+void wblock(uint bindex, void *buf)
 {
   if(lseek(fsfd, bindex*BLOCK_SIZE, 0) != bindex*BLOCK_SIZE) {
     perror("lseek");
@@ -209,7 +209,7 @@ void wblock(uint bindex, void* buf)
 }
 
 // Read block
-void rblock(uint bindex, void* buf)
+void rblock(uint bindex, void *buf)
 {
   if(lseek(fsfd, bindex*BLOCK_SIZE, 0) != bindex*BLOCK_SIZE) {
     perror("lseek");

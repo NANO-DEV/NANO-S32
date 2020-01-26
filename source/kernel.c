@@ -10,35 +10,37 @@
 #include "pci.h"
 #include "cli.h"
 #include "net.h"
+#include "sound.h"
 
 uint8_t system_disk = 0xFF;
+disk_info_t disk_info[MAX_DISK];
 
 // Heap related
-static const void* HEAPADDR = (void*)0x30000; // Allocate heap memory here
-#define HEAP_NUM_BLOCK   0x00020U
-#define HEAP_MEM_SIZE    0x40000U
+static const void *HEAPADDR = (void*)0x30000; // Allocate heap memory here
+#define HEAP_NUM_BLOCK   0x00020
+#define HEAP_MEM_SIZE    0x40000
 #define HEAP_BLOCK_SIZE  (HEAP_MEM_SIZE / HEAP_NUM_BLOCK)
 
-typedef struct {
-  uint   used;
-  void*  ptr;
-} HEAPBLOCK;
-static HEAPBLOCK heap[HEAP_NUM_BLOCK];
+typedef struct heap_block_t {
+  bool  used;
+  void *ptr;
+} heap_block_t;
+static heap_block_t heap[HEAP_NUM_BLOCK];
 
 // Init heap: all blocks are unused
 static void heap_init()
 {
   for(uint i=0; i<HEAP_NUM_BLOCK; i++) {
-    heap[i].used = 0;
+    heap[i].used = FALSE;
     heap[i].ptr = NULL;
   }
 }
 
 // Allocate memory in heap
-static void* heap_alloc(size_t size)
+static void *heap_alloc(size_t size)
 {
   if(size == 0) {
-    return 0;
+    return NULL;
   }
 
   // Get number of blocks to allocate
@@ -57,10 +59,10 @@ static void* heap_alloc(size_t size)
       n_found++;
       if(n_found >= n_alloc) {
         uint bi = (i+1-n_alloc)*HEAP_BLOCK_SIZE;
-        void* addr = (void*)HEAPADDR + bi;
+        void *addr = (void*)HEAPADDR + bi;
         for(uint j=i+1-n_alloc; j<=i; j++) {
           heap[j].ptr = addr;
-          heap[j].used = 1;
+          heap[j].used = TRUE;
         }
         debug_putstr("heap: found at %x\n", addr);
         return addr;
@@ -70,16 +72,16 @@ static void* heap_alloc(size_t size)
 
   // Error: not found
   debug_putstr("Mem alloc: BAD ALLOC (%u bytes)\n", size);
-  return 0;
+  return NULL;
 }
 
 // Free memory in heap
-static void heap_free(const void* ptr)
+static void heap_free(const void *ptr)
 {
   if(ptr != NULL) {
     for(uint i=0; i<HEAP_NUM_BLOCK; i++) {
       if(heap[i].ptr == ptr && heap[i].used) {
-        heap[i].used = 0;
+        heap[i].used = FALSE;
         heap[i].ptr = NULL;
       }
     }
@@ -94,7 +96,7 @@ static void heap_free(const void* ptr)
 // -Unpack parameters
 // -Redirect to the right kernel function
 // -Pack and return parameters
-uint kernel_service(uint service, void* param)
+uint kernel_service(uint service, void *param)
 {
   switch(service) {
 
@@ -116,7 +118,7 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_IO_OUT_CHAR_ATTR: {
-      syscall_posattr_t* pc = param;
+      syscall_posattr_t *pc = param;
       io_vga_putc_attr(pc->x, pc->y, pc->c, pc->attr);
       return 0;
     }
@@ -127,24 +129,24 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_IO_SET_CURSOR_POS: {
-      syscall_porition_t* ps = param;
+      syscall_porition_t *ps = param;
       io_vga_setcursorpos(ps->x, ps->y);
       return 0;
     }
 
     case SYSCALL_IO_GET_CURSOR_POS: {
-      syscall_porition_t* ps = param;
+      syscall_porition_t *ps = param;
       io_vga_getcursorpos(&ps->x, &ps->y);
       return 0;
     }
 
     case SYSCALL_IO_SET_SHOW_CURSOR: {
-      io_vga_showcursor(*(uint*)param);
+      io_vga_showcursor(*(bool*)param);
       return 0;
     }
 
     case SYSCALL_IO_IN_KEY: {
-      const uint wait_mode = 
+      const uint wait_mode =
         *(uint*)param == GETKEY_WAITMODE_WAIT ?
           IO_GETKEY_WAITMODE_WAIT :
           IO_GETKEY_WAITMODE_NOWAIT;
@@ -158,12 +160,12 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_GET_INFO: {
-      syscall_fsinfo_t* fi = param;
+      syscall_fsinfo_t *fi = param;
       return fs_get_info(fi->disk_index, fi->info);
     }
 
     case SYSCALL_FS_GET_ENTRY: {
-      syscall_fsentry_t* fi = param;
+      syscall_fsentry_t *fi = param;
       sfs_entry_t entry;
       fs_entry_t o_entry;
       char path[MAX_PATH] = {0};
@@ -177,21 +179,21 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_READ_FILE: {
-      syscall_fsrwfile_t* fi = param;
+      syscall_fsrwfile_t *fi = param;
       char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
       return fs_read_file(fi->buff, path, fi->offset, fi->count);
     }
 
     case SYSCALL_FS_WRITE_FILE: {
-      syscall_fsrwfile_t* fi = param;
+      syscall_fsrwfile_t *fi = param;
       char path[MAX_PATH] = {0};
       memcpy(path, fi->path, sizeof(path));
       return fs_write_file(fi->buff, path, fi->offset, fi->count, fi->flags);
     }
 
     case SYSCALL_FS_MOVE: {
-      syscall_fssrcdst_t* fi = param;
+      syscall_fssrcdst_t *fi = param;
       char src[MAX_PATH] = {0};
       char dst[MAX_PATH] = {0};
       memcpy(src, fi->src, sizeof(src));
@@ -200,7 +202,7 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_COPY: {
-      syscall_fssrcdst_t* fi = param;
+      syscall_fssrcdst_t *fi = param;
       char src[MAX_PATH] = {0};
       char dst[MAX_PATH] = {0};
       memcpy(src, fi->src, sizeof(src));
@@ -221,7 +223,7 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_FS_LIST: {
-      syscall_fslist_t* fi = param;
+      syscall_fslist_t *fi = param;
       sfs_entry_t entry;
       fs_entry_t o_entry;
       char path[MAX_PATH] = {0};
@@ -248,20 +250,32 @@ uint kernel_service(uint service, void* param)
     }
 
     case SYSCALL_NET_RECV: {
-      syscall_netop_t* no = param;
-      return net_recv(no->addr, no->buff, no->size);
+      syscall_netop_t *no = param;
+      return io_net_recv(no->addr, no->buff, no->size);
     }
 
     case SYSCALL_NET_SEND: {
-      syscall_netop_t* no = param;
-      uint result = net_send(no->addr, no->buff, no->size);
-      return result;
+      syscall_netop_t *no = param;
+      return io_net_send(no->addr, no->buff, no->size);
     }
 
     case SYSCALL_NET_PORT: {
-      uint16_t* port = (uint16_t*)param;
-      net_recv_set_port(*port);
+      uint16_t *port = (uint16_t*)param;
+      io_net_recv_set_port(*port);
       return 0;
+    }
+
+    case SYSCALL_SOUND_PLAY: {
+      return io_sound_play((const char*)param);
+    }
+
+    case SYSCALL_SOUND_STOP: {
+      io_sound_stop();
+      return 0;
+    }
+
+    case SYSCALL_SOUND_IS_PLAYING: {
+      return io_sound_is_playing() ? TRUE : FALSE;
     }
   };
 
@@ -297,7 +311,10 @@ void kernel()
   pci_init();
 
   // Initialize network
-  net_init();
+  io_net_init();
+
+  // Initialize sound
+  io_sound_init();
 
   // Execute config file
   cli_exec_file("config.ini");

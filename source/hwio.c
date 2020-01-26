@@ -8,7 +8,6 @@
 
 
 // PC keyboard interface constants
-
 #define KB_PORT_STATUS  0x64    // kbd controller status port(I)
 #define KB_PORT_DATA    0x60    // kbd data port(I)
 #define KB_DATA_IN_BUFF 0x01    // kbd data in buffer
@@ -28,7 +27,7 @@
 // C('A') == Control-A
 #define C(x) (x - '@')
 
-static const uint8_t shiftcode[256] =
+static const uint8_t shift_code[256] =
 {
   [0x1D] CTL,
   [0x2A] SHIFT,
@@ -38,7 +37,7 @@ static const uint8_t shiftcode[256] =
   [0xB8] ALT
 };
 
-static const uint8_t togglecode[256] =
+static const uint8_t toggle_code[256] =
 {
   [0x3A] CAPSLOCK,
   [0x45] NUMLOCK,
@@ -46,7 +45,7 @@ static const uint8_t togglecode[256] =
 };
 
 // Keyboard maps
-static const uint8_t normalmap[256] =
+static const uint8_t normal_map[256] =
 {
   NO,   KEY_ESC, '1',  '2',  '3',  '4',  '5',  '6',  // 0x00
   '7',  '8',  '9',  '0',  '-',  '=',  KEY_BACKSPACE, KEY_TAB,
@@ -69,7 +68,7 @@ static const uint8_t normalmap[256] =
   [0xD2] KEY_INS,   [0xD3] KEY_DEL
 };
 
-static const uint8_t shiftmap[256] =
+static const uint8_t shift_map[256] =
 {
   NO,   033,  '!',  '@',  '#',  '$',  '%',  '^',  // 0x00
   '&',  '*',  '(',  ')',  '_',  '+',  KEY_BACKSPACE, KEY_TAB,
@@ -91,7 +90,7 @@ static const uint8_t shiftmap[256] =
   [0xD2] KEY_INS,    [0xD3] KEY_DEL
 };
 
-static const uint8_t ctlmap[256] =
+static const uint8_t ctl_map[256] =
 {
   NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
   NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO,
@@ -116,8 +115,8 @@ static const uint8_t ctlmap[256] =
 static uint8_t kb_get()
 {
   static uint shift = NUMLOCK;
-  static const uint8_t* charcode[4] = {
-    normalmap, shiftmap, ctlmap, ctlmap
+  static const uint8_t *charcode[4] = {
+    normal_map, shift_map, ctl_map, ctl_map
   };
 
   // Check if there is data available
@@ -142,7 +141,7 @@ static uint8_t kb_get()
   } else if(data & 0x80) {
     // Key released
     data = (shift & E0ESC ? data : data & 0x7F);
-    shift &= ~(shiftcode[data] | E0ESC);
+    shift &= ~(shift_code[data] | E0ESC);
     return 0;
 
   } else if(shift & E0ESC) {
@@ -152,8 +151,8 @@ static uint8_t kb_get()
   }
 
   // Find key in map and translate
-  shift |= shiftcode[data];
-  shift ^= togglecode[data];
+  shift |= shift_code[data];
+  shift ^= toggle_code[data];
   uint8_t c = charcode[shift & (CTL | SHIFT)][data];
 
   // Handle CAPSLOCK enabled
@@ -187,13 +186,13 @@ void io_serial_putc(char c)
 {
   if(serial_status == 0xFF) {
     // Init serial
-    outb(COM1_PORT + 1, 0x00);    // Disable all interrupts
-    outb(COM1_PORT + 3, 0x80);    // Enable DLAB (set baud rate divisor)
-    outb(COM1_PORT + 0, 0x03);    // Set divisor to 3 (lo byte) 38400 baud
-    outb(COM1_PORT + 1, 0x00);    //                  (hi byte)
-    outb(COM1_PORT + 3, 0x03);    // 8 bits, no parity, one stop bit
-    outb(COM1_PORT + 2, 0xC7);    // Enable FIFO, clear them, with 14-byte threshold
-    outb(COM1_PORT + 4, 0x0B);    // IRQs enabled, RTS/DSR set
+    outb(COM1_PORT + 1, 0x00); // Disable all interrupts
+    outb(COM1_PORT + 3, 0x80); // Enable DLAB (set baud rate divisor)
+    outb(COM1_PORT + 0, 0x0C); // Set divisor to 12 (lo byte) 115200 baud
+    outb(COM1_PORT + 1, 0x00); //                   (hi byte)
+    outb(COM1_PORT + 3, 0x03); // 8 bits, no parity, one stop bit
+    outb(COM1_PORT + 2, 0x00); // Disable FIFO
+    outb(COM1_PORT + 4, 0x00);
     serial_status = 1;
 
     // If status is 0xFF, no serial port
@@ -207,7 +206,7 @@ void io_serial_putc(char c)
   // If serial port is active, put char
   if(serial_status == 1) {
     // Wait
-    for(uint i=0; i<128 && !(inb(COM1_PORT+5) & 0x20); i++ ) {
+    for(uint i=0; i<128000 && !(inb(COM1_PORT+5) & 0x20); i++ ) {
     }
     outb(COM1_PORT, c);
   }
@@ -217,7 +216,7 @@ void io_serial_putc(char c)
 static const uint VGA_PORT = 0x03D4;
 static const size_t VGA_WIDTH = 80;
 static const size_t VGA_HEIGHT = 28;
-static uint16_t* const VGA_MEMORY = (uint16_t*) 0xB8000;
+static uint16_t *const VGA_MEMORY = (uint16_t*) 0xB8000;
 
 // Put char (screen)
 void io_vga_putc(char c, uint8_t attr)
@@ -301,7 +300,7 @@ void io_vga_clear()
 }
 
 // Get screen cursor position
-void io_vga_getcursorpos(uint* x, uint* y)
+void io_vga_getcursorpos(uint *x, uint *y)
 {
   outb(VGA_PORT, 14);
   uint pos = inb(VGA_PORT+1) << 8;
@@ -323,7 +322,7 @@ void io_vga_setcursorpos(uint x, uint y)
 }
 
 // Show or hide screen cursor
-void io_vga_showcursor(uint show)
+void io_vga_showcursor(bool show)
 {
   if(!show) {
     outb(VGA_PORT, 0x0A);
@@ -355,7 +354,7 @@ static uint8_t read_CMOS(uint8_t reg)
 
 #define CMOS_UIP (1 << 7) // RTC update in progress
 // Get system time
-void io_getdatetime(time_t* t)
+void io_getdatetime(time_t *t)
 {
   // Use the RTC
   while(1) {
@@ -422,7 +421,7 @@ static uint get_currentsecond()
 // two registers to configure each interrupt.
 // The first (low) register in a pair contains configuration bits.
 // The second (high) register contains a bitmask telling which
-// CPUs can serve that interrupt.
+// CPUs can serve that interrupt
 #define INT_DISABLED   0x00010000  // Interrupt disabled
 #define INT_LEVEL      0x00008000  // Level-triggered (vs edge-)
 #define INT_ACTIVELOW  0x00002000  // Active low (vs high)
@@ -430,36 +429,37 @@ static uint get_currentsecond()
 
 // IO APIC MMIO structure: write reg, then read or write data.
 struct ioapic {
-  uint reg;
-  uint pad[3];
-  uint data;
+  uint32_t reg;
+  uint32_t pad[3];
+  uint32_t data;
 };
 
-volatile struct ioapic *ioapic = NULL;
+volatile struct ioapic *ioapic = (volatile struct ioapic*)IOAPIC;
 
-static uint ioapicread(int reg)
+static uint ioapic_read(int reg)
 {
   ioapic->reg = reg;
   return ioapic->data;
 }
 
-static void ioapicwrite(int reg, uint data)
+static void ioapic_write(int reg, uint data)
 {
   ioapic->reg = reg;
   ioapic->data = data;
 }
 
 // Init IO-APIC
-static void ioapicinit()
+static void ioapic_init()
 {
   ioapic = (volatile struct ioapic*)IOAPIC;
-  const uint maxintr = (ioapicread(REG_VER) >> 16) & 0xFF;
+  const uint max_intr = (ioapic_read(REG_VER) >> 16) & 0xFF;
 
+  debug_putstr("ioapic max_intr=%u\n", max_intr);
   // Mark all interrupts edge-triggered, active high, disabled,
   // and not routed to any CPUs
-  for(uint i = 0; i <= maxintr; i++) {
-    ioapicwrite(REG_TABLE+2*i, INT_DISABLED | (T_IRQ0 + i));
-    ioapicwrite(REG_TABLE+2*i+1, 0);
+  for(uint i = 0; i <= max_intr; i++) {
+    ioapic_write(REG_TABLE+2*i, INT_DISABLED | (T_IRQ0 + i));
+    ioapic_write(REG_TABLE+2*i+1, 0);
   }
 }
 
@@ -468,8 +468,8 @@ static void ioapic_enable(int irq)
 {
   // Mark interrupt edge-triggered, active high,
   // enabled, and routed to the cpu 0
-  ioapicwrite(REG_TABLE+2*irq, T_IRQ0 + irq);
-  ioapicwrite(REG_TABLE+2*irq+1, 0);
+  ioapic_write(REG_TABLE+2*irq, T_IRQ0 + irq);
+  ioapic_write(REG_TABLE+2*irq+1, 0);
 }
 
 struct IDT_entry {
@@ -480,20 +480,37 @@ struct IDT_entry {
   uint16_t offset_higherbits;
 };
 
-extern void* idtr;
+extern void *idtr;
 extern uint32_t pidt;
-void IRQNET_wrapper();
+void IRQNet_wrapper();
+void IRQSound_wrapper();
 
 // Set network IRQ handler
 void set_network_IRQ(uint irq)
 {
-  struct IDT_entry* volatile pIDT = (struct IDT_entry*)pidt;
+  struct IDT_entry volatile *pIDT = (struct IDT_entry*)pidt;
 
-  pIDT[T_IRQ0+irq].offset_lowerbits = (uint32_t)IRQNET_wrapper & 0xFFFF;
+  pIDT[T_IRQ0+irq].offset_lowerbits = (uint32_t)IRQNet_wrapper & 0xFFFF;
   pIDT[T_IRQ0+irq].selector = 0x08; // KERNEL_CODE_SEGMENT_OFFSET
   pIDT[T_IRQ0+irq].zero = 0;
   pIDT[T_IRQ0+irq].type_attr = 0x8F; // INTERRUPT_GATE
-  pIDT[T_IRQ0+irq].offset_higherbits = ((uint32_t)IRQNET_wrapper & 0xFFFF0000) >> 16;
+  pIDT[T_IRQ0+irq].offset_higherbits = ((uint32_t)IRQNet_wrapper & 0xFFFF0000) >> 16;
+
+  __asm__("lidt (%0)" : : "m" (idtr));
+
+  ioapic_enable(irq);
+}
+
+// Set sound IRQ handler
+void set_sound_IRQ(uint irq)
+{
+  struct IDT_entry volatile *pIDT = (struct IDT_entry*)pidt;
+
+  pIDT[T_IRQ0+irq].offset_lowerbits = (uint32_t)IRQSound_wrapper & 0xFFFF;
+  pIDT[T_IRQ0+irq].selector = 0x08; // KERNEL_CODE_SEGMENT_OFFSET
+  pIDT[T_IRQ0+irq].zero = 0;
+  pIDT[T_IRQ0+irq].type_attr = 0x8F; // INTERRUPT_GATE
+  pIDT[T_IRQ0+irq].offset_higherbits = ((uint32_t)IRQSound_wrapper & 0xFFFF0000) >> 16;
 
   __asm__("lidt (%0)" : : "m" (idtr));
 
@@ -535,8 +552,8 @@ void set_network_IRQ(uint irq)
 #define TCCR    (0x0390/4)   // Timer Current Count
 #define TDCR    (0x03E0/4)   // Timer Divide Configuration
 
-static volatile uint32_t* lapic = NULL;
-static void lapicw(uint index, uint value)
+static volatile uint32_t *lapic = NULL;
+static void lapic_write(uint index, uint value)
 {
   lapic[index] = value;
   lapic[ID];  // wait for write to finish, by reading
@@ -549,7 +566,7 @@ static volatile uint ints_per_second = 5000000;
 // Initialize lapic
 void lapic_init()
 {
-  __asm__("cli");
+  disable_interrupts();
 
   uint32_t eax=0, edx=0;
   read_MSR(IA32_APIC_BASE_MSR, &eax, &edx);
@@ -558,50 +575,50 @@ void lapic_init()
   debug_putstr("LAPIC base=%x\n", lapic);
 
   // Enable local APIC; set spurious interrupt vector
-  lapicw(SVR, ENABLE | (T_IRQ0 + IRQ_SPURIOUS));
+  lapic_write(SVR, ENABLE | (T_IRQ0 + IRQ_SPURIOUS));
 
   // The timer repeatedly counts down at bus frequency
   // from lapic[TICR] and then issues an interrupt
-  lapicw(TDCR, X1);
-  lapicw(TIMER, PERIODIC | (T_IRQ0 + IRQ_TIMER));
-  lapicw(TICR, ints_per_second);
+  lapic_write(TDCR, X1);
+  lapic_write(TIMER, PERIODIC | (T_IRQ0 + IRQ_TIMER));
+  lapic_write(TICR, ints_per_second);
 
   // Clear error status register (requires back-to-back writes)
-  lapicw(ESR, 0);
-  lapicw(ESR, 0);
+  lapic_write(ESR, 0);
+  lapic_write(ESR, 0);
 
   // Ack any outstanding interrupts
-  lapicw(EOI, 0);
+  lapic_write(EOI, 0);
 
   // Send an Init Level De-Assert to synchronise arbitration ID's
-  lapicw(ICRHI, 0);
-  lapicw(ICRLO, INIT | LEVEL);
+  lapic_write(ICRHI, 0);
+  lapic_write(ICRLO, INIT | LEVEL);
   while(lapic[ICRLO] & DELIVS);
 
   // Enable interrupts on the APIC
-  lapicw(TPR, 0x0);
+  lapic_write(TPR, 0x0);
 
-  ioapicinit();
-  __asm__("sti");
+  ioapic_init();
+  enable_interrupts();
 }
 
 // Inhibit LAPIC interrupts
 void lapic_inhibit()
 {
-    lapicw(TPR, 0x20);
+  lapic_write(TPR, 0x20);
 }
 
 // Deinhibit LAPIC interrupts
 void lapic_deinhibit()
 {
-    lapicw(TPR, 0x00);
+  lapic_write(TPR, 0x00);
 }
 
 // Acknowledge interrupt
 void lapic_eoi()
 {
   if(lapic) {
-    lapicw(EOI, 0);
+    lapic_write(EOI, 0);
   }
 }
 
@@ -633,7 +650,7 @@ void timer_handler()
   } else if(s2 == s1) {
     s2 = get_currentsecond();
     if(s2 != s1) {
-      lapicw(TICR, (clock_ints * ints_per_second) / 100);
+      lapic_write(TICR, (clock_ints * ints_per_second) / 100);
       ints_per_second = 100;
       debug_putstr("Timer adjusted to %u interrupts per second\n", ints_per_second);
     }
@@ -685,18 +702,18 @@ static uint disk_reset(uint hwdisk)
   regs.dx = hwdisk;
   __asm__("stc");
   int32(0x13, &regs);
-  return (regs.eflags & X86_CF);
+  return (regs.eflags & EFLAG_CF);
 }
 
 // Disk management
-typedef struct {
+typedef struct diskinfo_t {
   uint cylinder_num;
   uint head_num;
   uint sector_num;
 } diskinfo_t;
 
-// Return 0 on success
-static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
+// Return NO_ERROR on success
+static uint disk_get_info(uint hwdisk, diskinfo_t *diskinfo)
 {
   regs16_t regs = {0};
 
@@ -708,7 +725,7 @@ static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
   __asm__("clc");
   int32(0x13, &regs);
 
-  const uint result = (regs.eflags & X86_CF);
+  uint result = (regs.eflags & EFLAG_CF);
   if(!result) {
 
     diskinfo->head_num = 1 + ((regs.dx & 0xFF00) >> 8);
@@ -716,106 +733,152 @@ static uint disk_get_info(uint hwdisk, diskinfo_t* diskinfo)
     diskinfo->cylinder_num = 1 +
       (((regs.cx & 0xFF00) >> 8) | ((regs.cx & 0xC0) << 2));
 
+    result = NO_ERROR;
+
   } else {
 
     diskinfo->head_num = 0;
     diskinfo->sector_num = 0;
     diskinfo->cylinder_num = 0;
+    result = ERROR_IO;
   }
 
   return result;
 }
 
-#define IDE_BSY       0x80
-#define IDE_DRDY      0x40
-#define IDE_DF        0x20
-#define IDE_DRQ       0x08
-#define IDE_ERR       0x01
+#define IDE_BSY  0x80 // The drive is preparing to send/receive data
+#define IDE_DRDY 0x40 // Clear only when drive is spun down or after an error
+#define IDE_DF   0x20 // Drive Fault Error (does not set ERR)
+#define IDE_DRQ  0x08 // The drive is ready to transfer data
+#define IDE_ERR  0x01 // Error occurred
 
 #define IDE_CMD_READ  0x20
 #define IDE_CMD_WRITE 0x30
 #define IDE_CMD_IDENT 0xEC
+#define IDE_CMD_FLUSH 0xE7
 
 // Around two seconds (400ns per port read)
-#define ATA_ATTEMPTS  (2e9/400)
+#define ATA_ATTEMPTS (2e9/400)
 
-// Wait for disk ready. Return 0 on success
+// Wait for disk ready. Return NO_ERROR on success
 static uint ATA_PIO_waitdisk()
 {
   uint r = 0;
   for(uint i=0; i<ATA_ATTEMPTS; i++) {
-    r = inb(0x1F7);
-    if(r & IDE_ERR) {
-      debug_putstr("ATA wait disk error: %x\n", r);
-      break;
+    if(i < 5) {
+      r = inb(0x3F6);
+      continue;
     }
-    if((r & (IDE_BSY|IDE_DRDY)) == IDE_DRDY) {
-      break;
+    r = inb(0x1F7);
+    if(!(r & IDE_BSY)) {
+      if(r & IDE_ERR) {
+        const uint err = inb(0x1F1);
+        debug_putstr("ATA wait disk error: %2x %2x\n", r, err);
+        break;
+      }
+      if(r & IDE_DF) {
+        debug_putstr("ATA wait disk: drive fault\n");
+        break;
+      }
+
+      if(r & IDE_DRDY) {
+        break;
+      }
+    }
+    if(i == ATA_ATTEMPTS-1) {
+      debug_putstr("ATA wait disk: failed after %u attempts (%2x)\n", i, r);
+      return ERROR_IO;
     }
   }
 
-  return (r & (IDE_DF|IDE_ERR));
+  if(!(r & IDE_DRDY)) {
+    return ERROR_NOT_AVAILABLE;
+  }
+
+  if(r & (IDE_DF|IDE_ERR|IDE_BSY)) {
+    return ERROR_IO;
+  }
+
+  return NO_ERROR;
 }
 
 // Read sectors using ATA PIO mode
-// Return 0 on success
-static uint ATA_PIO_readsector(uint disk, uint sector, size_t n, void* buff)
+// Return NO_ERROR on success
+static uint ATA_PIO_readsector(uint disk, uint sector, size_t n, void *buff)
 {
-  // Set disk and wait
-  outb(0x1F6, (((disk-2)&1)<<4) | 0xE0);
+  // Issue command
+  outb(0x1F6, ((sector>>24)&0x0F) | (((disk-2)&1)<<4) | 0xE0);
+  outb(0x1F2, n);
+  outb(0x1F3, sector & 0xFF);
+  outb(0x1F4, (sector>>8) & 0xFF);
+  outb(0x1F5, (sector>>16) & 0xFF);
+  outb(0x1F7, IDE_CMD_READ);
+
   uint result = ATA_PIO_waitdisk();
-  if(result == 0) {
-
-    // Issue command
-    outb(0x1F2, n);
-    outb(0x1F3, sector);
-    outb(0x1F4, sector >> 8);
-    outb(0x1F5, sector >> 16);
-    outb(0x1F6, (sector >> 24) | (((disk-2)&1)<<4) | 0xE0);
-    outb(0x1F7, IDE_CMD_READ);
-
-    // Read and copy data
-    result = ATA_PIO_waitdisk();
-    if(result == 0) {
-      insl(0x1F0, buff, n*DISK_SECTOR_SIZE/4);
-    }
+  if(result != NO_ERROR) {
+    debug_putstr("ATA read disk wait(0) failed. disk=%2x\n", disk);
+    return result;
   }
+
+  // Read and copy data
+  insl(0x1F0, buff, n*DISK_SECTOR_SIZE/4);
+  result = ATA_PIO_waitdisk();
+  if(result != NO_ERROR) {
+    debug_putstr("ATA read disk wait(1) failed. disk=%2x\n", disk);
+    return result;
+  }
+
   return result;
 }
 
 // Write sectors using ATA PIO mode
-// Return 0 on success
-static uint ATA_PIO_writesector(uint disk, uint sector, size_t n, const void* buff)
+// Return NO_ERROR on success
+static uint ATA_PIO_writesector(uint disk, uint sector, size_t n, const void *buff)
 {
-  // Set disk and wait
-  outb(0x1F6, (((disk-2)&1)<<4) | 0xE0);
+  // Issue command
+  outb(0x1F6, ((sector>>24)&0x0F) | (((disk-2)&1)<<4) | 0xE0);
+  outb(0x1F2, n);
+  outb(0x1F3, sector & 0xFF);
+  outb(0x1F4, (sector>>8) & 0xFF);
+  outb(0x1F5, (sector>>16) & 0xFF);
+  outb(0x1F7, IDE_CMD_WRITE);
+
   uint result = ATA_PIO_waitdisk();
-  if(result != 0) {
+  if(result != NO_ERROR) {
+    debug_putstr("ATA write disk wait(0) failed. disk=%2x\n", disk);
     return result;
   }
 
-  // Issue command
-  outb(0x1F2, n);
-  outb(0x1F3, sector);
-  outb(0x1F4, sector >> 8);
-  outb(0x1F5, sector >> 16);
-  outb(0x1F6, (sector >> 24) | (((disk-2)&1)<<4) | 0xE0);
-  outb(0x1F7, IDE_CMD_WRITE);
-
-  // Write and copy data
   outsl(0x1F0, buff, n*DISK_SECTOR_SIZE/4);
-  return ATA_PIO_waitdisk();
+  result = ATA_PIO_waitdisk();
+  if(result != NO_ERROR) {
+    debug_putstr("ATA write disk wait(1) failed. disk=%2x\n", disk);
+    return result;
+  }
+
+  // Manual flush
+  outb(0x1F7, IDE_CMD_FLUSH);
+  result = ATA_PIO_waitdisk();
+  if(result != NO_ERROR) {
+    debug_putstr("ATA write disk wait(2) failed. disk=%2x\n", disk);
+    return result;
+  }
+
+  return result;
 }
 
-// Detect ATA disk size and model
-#define ATADEV_PATAPI 0xEB14
-#define ATADEV_SATAPI 0x9669
-#define ATADEV_PATA 0x0000
-#define ATADEV_SATA 0xC33C
-static uint ATA_detect(uint disk, char* model, size_t model_size )
+// Detect ATA disk size and modelm return number of sectors if found
+// Return 0 if not found
+static size_t ATA_detect(uint disk, char *model, size_t model_size )
 {
+  memset(model, 0, model_size);
+
   // Send IDENTIFY command
   outb(0x1F6, (((disk-2)&1)<<4) | 0xA0);
+  outb(0x1F2, 0);
+  outb(0x1F3, 0);
+  outb(0x1F4, 0);
+  outb(0x1F5, 0);
   outb(0x1F7, IDE_CMD_IDENT);
 
   uint result = 0;
@@ -880,13 +943,19 @@ static uint ATA_detect(uint disk, char* model, size_t model_size )
   if(model_size > 0) {
     model[model_size-1] = 0;
   }
-  debug_putstr("ATA idenfitying disk %u:_num_sectors: %u\n", disk, num_sectors);
+  debug_putstr("ATA idenfitying disk %u: num_sectors: %u model: %s\n",
+    disk, num_sectors, model);
+
+  // Disable interrupts
+  outb(0x3F6, 2);
   return num_sectors;
 }
 
 // Initialize disks info
 void io_disks_init_info()
 {
+  memset(disk_info, 0, sizeof(disk_info));
+
   // Setup disk identifiers
   disk_info[0].id = 0x00; // Floppy disk 0
   strncpy(disk_info[0].name, "fd0", sizeof(disk_info[0].name));
@@ -914,21 +983,19 @@ void io_disks_init_info()
     disk_info[i].sectors = dinfo.sector_num;
     disk_info[i].sides = dinfo.head_num;
     disk_info[i].cylinders = dinfo.cylinder_num;
-    disk_info[i].isATA = 0;
+    disk_info[i].isATA = FALSE;
 
     // Use retrieved data if success
-    if(result == 0) {
+    if(result == NO_ERROR) {
       disk_info[i].size = (disk_info[i].sectors *
         disk_info[i].sides * disk_info[i].cylinders) /
         (1048576 / DISK_SECTOR_SIZE);
-
-      disk_info[i].last_access = 0;
 
       if(i >= 2) {
         char model[sizeof(disk_info[i].desc)] = {0};
         const uint ATA_num_sectors = ATA_detect(i, model, sizeof(model));
         if(ATA_num_sectors > 0) {
-          disk_info[i].isATA = 1;
+          disk_info[i].isATA = TRUE;
           disk_info[i].size = (ATA_num_sectors * DISK_SECTOR_SIZE)/(1024*1024);
           if(strlen(model)) {
             strncpy(disk_info[i].desc, model, sizeof(disk_info[i].desc));
@@ -948,7 +1015,6 @@ void io_disks_init_info()
       disk_info[i].sides = 0;
       disk_info[i].cylinders = 0;
       disk_info[i].size = 0;
-      disk_info[i].last_access = 0;
     }
   }
 
@@ -956,13 +1022,13 @@ void io_disks_init_info()
   system_disk = hwdisk_to_disk(system_hwdisk);
 }
 
-typedef struct {
+typedef struct chs_t {
   uint cylinder;
   uint head;
   uint sector;
 } chs_t;
 
-static void lba_to_chs( uint lba, uint spt, uint nh, chs_t* chs)
+static void lba_to_chs( uint lba, uint spt, uint nh, chs_t *chs)
 {
   const uint temp = lba / spt;
   chs->sector = 1 + (lba % spt);
@@ -970,8 +1036,8 @@ static void lba_to_chs( uint lba, uint spt, uint nh, chs_t* chs)
   chs->cylinder = temp / nh;
 }
 
-// Return 0 on success
-static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
+// Return NO_ERROR on success
+static uint disk_read_sector(uint disk, uint sector, size_t n, void *buff)
 {
   uint result = 0;
 
@@ -983,7 +1049,7 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
       n -= n_sectors;
       sector += n_sectors;
       buff += n_sectors * DISK_SECTOR_SIZE;
-      if(result) {
+      if(result != NO_ERROR) {
         break;
       }
     }
@@ -1023,7 +1089,7 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
         __asm__("stc");
         int32(0x13, &regs);
 
-        result = (regs.eflags & X86_CF);
+        result = (regs.eflags & EFLAG_CF);
         if(!result) {
           if(buff != disk_buff) {
             memcpy(buff+s*DISK_SECTOR_SIZE, disk_buff, DISK_SECTOR_SIZE);
@@ -1039,32 +1105,37 @@ static uint disk_read_sector(uint disk, uint sector, size_t n, void* buff)
         break;
       }
     }
+    if(result == 0) {
+      result = NO_ERROR;
+    }
   }
 
   return result;
 }
 
 // Read disk, specific block, offset and size
-// Returns 0 on success, another value otherwise
-uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
+// Returns NO_ERROR on success, another value otherwise
+uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void *buff)
 {
   // Check params
-  if(buff == 0) {
+  if(buff == NULL) {
     debug_putstr("Read disk: bad buffer\n");
-    return 1;
+    return ERROR_IO;
   }
 
   if(disk_info[disk].size == 0) {
     debug_putstr("Read disk: bad disk\n");
-    return 1;
+    return ERROR_IO;
   }
+
+  disable_interrupts();
 
   // Compute initial sector and offset
   sector += offset / DISK_SECTOR_SIZE;
   offset = offset % DISK_SECTOR_SIZE;
 
   uint i = 0;
-  uint result = 0;
+  uint result = NO_ERROR;
 
   // io_disk_read_sector can only read entire and aligned sectors.
   // If requested offset is unaligned to sectors, read an entire
@@ -1080,7 +1151,7 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   // Now read aligned an entire sectors
   uint n_sectors = size / DISK_SECTOR_SIZE;
 
-  if(n_sectors && result == 0) {
+  if(n_sectors && result == NO_ERROR) {
     result = disk_read_sector(disk, sector, n_sectors, buff+i);
     i += n_sectors * DISK_SECTOR_SIZE;
     sector += n_sectors;
@@ -1090,22 +1161,23 @@ uint io_disk_read(uint disk, uint sector, uint offset, size_t size, void* buff)
   // io_disk_read_sector can only read entire and aligned sectors.
   // If requested size exceeds entire sectors, read
   // an entire sector and copy only requested bytes
-  if(size && result == 0) {
+  if(size && result == NO_ERROR) {
     result = disk_read_sector(disk, sector, 1, disk_buff);
     memcpy(buff+i, disk_buff, size);
   }
 
-  if(result != 0) {
+  if(result != NO_ERROR) {
     debug_putstr("Read disk error (%x)\n", result);
   }
 
+  enable_interrupts();
   return result;
 }
 
-// Returns 0 on success
-static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff)
+// Returns NO_ERROR on success
+static uint disk_write_sector(uint disk, uint sector, size_t n, const void *buff)
 {
-  uint result = 0;
+  uint result = NO_ERROR;
 
   // Use ATA PIO for IDE
   if(disk_info[disk].isATA) {
@@ -1115,7 +1187,7 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
       n -= n_sectors;
       sector += n_sectors;
       buff += n_sectors * DISK_SECTOR_SIZE;
-      if(result) {
+      if(result != NO_ERROR) {
         break;
       }
     }
@@ -1159,7 +1231,7 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
         __asm__("stc");
         int32(0x13, &regs);
 
-        result = (regs.eflags & X86_CF);
+        result = (regs.eflags & EFLAG_CF);
         if(!result) {
           break;
         } else {
@@ -1172,32 +1244,38 @@ static uint disk_write_sector(uint disk, uint sector, size_t n, const void* buff
         break;
       }
     }
+
+    if(result == 0) {
+      result = NO_ERROR;
+    }
   }
 
   return result;
 }
 
 // Write disk, specific sector, offset and size
-// Returns 0 on success, another value otherwise
-uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void* buff)
+// Returns NO_ERROR on success, another value otherwise
+uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void *buff)
 {
   // Check params
-  if(buff == 0) {
+  if(buff == NULL) {
     debug_putstr("Write disk: bad buffer\n");
-    return 1;
+    return ERROR_IO;
   }
 
   if(disk_info[disk].size == 0) {
     debug_putstr("Write disk: bad disk\n");
-    return 1;
+    return ERROR_IO;
   }
+
+  disable_interrupts();
 
   // Compute initial sector and offset
   sector += offset / DISK_SECTOR_SIZE;
   offset = offset % DISK_SECTOR_SIZE;
 
   uint i = 0;
-  uint result = 0;
+  uint result = NO_ERROR;
 
   // io_disk_write_sector can only write entire and aligned sectors.
   // If requested offset is unaligned to sectors, read an entire
@@ -1214,7 +1292,7 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
   // Now write aligned an entire sectors
   uint n_sectors = size / DISK_SECTOR_SIZE;
 
-  if(n_sectors && result == 0) {
+  if(n_sectors && result == NO_ERROR) {
     result = disk_write_sector(disk, sector, n_sectors, buff+i);
     i += n_sectors * DISK_SECTOR_SIZE;
     sector += n_sectors;
@@ -1224,16 +1302,17 @@ uint io_disk_write(uint disk, uint sector, uint offset, size_t size, const void*
   // io_disk_write_sector can only write entire and aligned sectors.
   // If requested size exceeds entire sectors, read
   // an entire sector, overwrite requested bytes, and write
-  if(size && result == 0) {
+  if(size && result == NO_ERROR) {
     result += disk_read_sector(disk, sector, 1, disk_buff);
     memcpy(disk_buff, buff+i, size);
     result += disk_write_sector(disk, sector, 1, disk_buff);
   }
 
-  if(result != 0) {
+  if(result != NO_ERROR) {
     debug_putstr("Write disk error (%x)\n", result);
   }
 
+  enable_interrupts();
   return result;
 }
 
@@ -1247,7 +1326,7 @@ void apm_shutdown()
   regs.bx = 0;
   int32(0x15, &regs);
 
-  if(regs.eflags & X86_CF) {
+  if(regs.eflags & EFLAG_CF) {
     debug_putstr("APM disconnect error (%2x)\n", (regs.ax & 0xFF00) >> 8);
   }
 
@@ -1257,7 +1336,7 @@ void apm_shutdown()
   regs.bx = 0;
   int32(0x15, &regs);
 
-  if(regs.eflags & X86_CF) {
+  if(regs.eflags & EFLAG_CF) {
     debug_putstr("APM connect error (%2x)\n", (regs.ax & 0xFF00) >> 8);
   }
 
@@ -1268,7 +1347,7 @@ void apm_shutdown()
   regs.cx = 0x0101;
   int32(0x15, &regs);
 
-  if(regs.eflags & X86_CF) {
+  if(regs.eflags & EFLAG_CF) {
     debug_putstr("APM set version error (%2x)\n", (regs.ax & 0xFF00) >> 8);
   }
 
@@ -1279,7 +1358,7 @@ void apm_shutdown()
   regs.cx = 0x0001;
   int32(0x15, &regs);
 
-  if(regs.eflags & X86_CF) {
+  if(regs.eflags & EFLAG_CF) {
     debug_putstr("APM enable error (%2x)\n", (regs.ax & 0xFF00) >> 8);
   }
 
@@ -1290,11 +1369,32 @@ void apm_shutdown()
   regs.cx = 0x0003;
   int32(0x15, &regs);
 
-  if(regs.eflags & X86_CF) {
+  if(regs.eflags & EFLAG_CF) {
     debug_putstr("APM set state error (%2x)\n", (regs.ax & 0xFF00) >> 8);
   }
 
   while(1) {
-
   }
+}
+
+// Enable/disable interrupts
+// Only enabled when there are no locks
+#define INT_NO_LOCK 1
+static volatile uint interrupt_locks = INT_NO_LOCK;
+void enable_interrupts()
+{
+  if(interrupt_locks <= INT_NO_LOCK) {
+    debug_putstr("Interrupt locks error\n");
+    interrupt_locks = INT_NO_LOCK+1;
+  }
+  interrupt_locks--;
+  if(interrupt_locks == INT_NO_LOCK) {
+    x86_sti();
+  }
+}
+
+void disable_interrupts()
+{
+  x86_cli();
+  interrupt_locks++;
 }

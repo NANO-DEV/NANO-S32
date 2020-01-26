@@ -5,25 +5,24 @@
 
 #define min(a,b) (a<b?a:b)
 #define max(a,b) (a>b?a:b)
-#define NULL (0)
 
 // System call
 // Avoid using it since there are already implemented
 // more general purpose functions in this library
-uint syscall(uint service, void* param);
+uint syscall(uint service, void *param);
 
 // Memory
-void* memset(void* dst, int c, size_t n);
-size_t memcpy(void* dst, const void* src, size_t n);
-size_t memcmp(const void* mem1, const void* mem2, size_t n);
+void  *memset(void *dst, int c, size_t n);
+size_t memcpy(void *dst, const void *src, size_t n);
+size_t memcmp(const void *mem1, const void *mem2, size_t n);
 
 // String management
-size_t strcmp(const char* str1, const char* str2);
-size_t strlen(const char* str);
-size_t strncpy(char* dst, const char* src, size_t n);
-size_t strncat(char* dst, const char* src, size_t n);
-size_t strchr(const char* str, char c);
-char* strtok(char* src, char** next, char delim);
+size_t strcmp(const char *str1, const char *str2);
+size_t strlen(const char *str);
+size_t strncpy(char *dst, const char *src, size_t n);
+size_t strncat(char *dst, const char *src, size_t n);
+size_t strchr(const char *str, char c);
+char  *strtok(char *src, char **next, char delim);
 
 // strtok:
 // Get first token in string
@@ -41,23 +40,23 @@ char* strtok(char* src, char** next, char delim);
 // until *next = 0
 
 // Parse string uint
-uint stou(char* src);
+uint stou(char *src);
 
 // Format a string using %x, %d, %u, %U, %s...
-void formatstr(char* str, size_t size, char* format, ...);
+void formatstr(char *str, size_t size, char *format, ...);
 
 
 // Allocate size bytes of memory
-void* malloc(size_t size);
+void *malloc(size_t size);
 
 // Free allocated memory
-void mfree(void* ptr);
+void mfree(void *ptr);
 
 
 // Cursor management
-void get_cursor_pos(uint* col, uint* row);
+void get_cursor_pos(uint *col, uint *row);
 void set_cursor_pos(uint col, uint row);
-void set_show_cursor(uint show);
+void set_show_cursor(bool show);
 
 
 // Special key codes
@@ -106,7 +105,7 @@ enum GETKEY_WAITMODE{
   GETKEY_WAITMODE_WAIT        // Wait for key pressed
 };
 uint getkey(uint wait_mode); // See GETKEY_WAITMODE enum
-int getstr(char* str, size_t n);
+int getstr(char *str, size_t n);
 // getstr: Get a string from user. Returns when RETURN key is
 // pressed. Unused str characters are set to 0.
 // Returns number of elements in str
@@ -158,18 +157,17 @@ void clear_screen();
 // %d (int), %u (uint), %x (uint),
 // %s (char*), %c (uchar)
 // Width modifiers allowed: %2d, %4x...
-void putstr(const char* format, ...);
+void putstr(const char *format, ...);
 
 // Formatted strings in serial port and debug output.
 // Debug output is serial port by default
-void serial_putstr(const char* format, ...);
-void debug_putstr(const char* format, ...);
+void serial_putstr(const char *format, ...);
+void debug_putstr(const char *format, ...);
 
 
 
 // Get current system date and time
-
-void get_datetime(time_t* t);
+void get_datetime(time_t *t);
 
 // Get current system timer (miliseconds)
 uint get_timer();
@@ -206,17 +204,19 @@ void wait(uint ms);
 // hd1 : 0x81
 
 // Special error codes
-#define ERROR_NOT_FOUND 0xFFFF
-#define ERROR_EXISTS    0xFFFE
-#define ERROR_IO        0xFFFD
-#define ERROR_NO_SPACE  0xFFFC
-#define ERROR_ANY       0xFFFB
+#define ERROR_NOT_FOUND     0xFFFFFFFF
+#define ERROR_EXISTS        0xFFFFFFFE
+#define ERROR_IO            0xFFFFFFFD
+#define ERROR_NO_SPACE      0xFFFFFFFC
+#define ERROR_NOT_AVAILABLE 0xFFFFFFFB
+#define ERROR_ANY           0xFFFFFFFA
+#define NO_ERROR            0x00000000
 
 // fs_entry_t flags
 #define FST_DIR  0x01   // Directory
 #define FST_FILE 0x02   // File
 
-typedef struct {
+typedef struct fs_entry_t {
   char    name[15];
   uint8_t flags;
   uint    size; // bytes for files, items for directories
@@ -228,7 +228,7 @@ typedef struct {
 #define FS_TYPE_UNKNOWN 0x000
 #define FS_TYPE_NSFS    0x001
 
-typedef struct {
+typedef struct fs_info_t{
   char  name[4];
   uint  id;        // Disk id code
   uint  fs_type;
@@ -242,7 +242,7 @@ typedef struct {
 // disk_index is referred to the index of a disk on the currently
 // available disks list.
 // returns number of available disks
-uint get_fsinfo(uint disk_index, fs_info_t* info);
+uint get_fsinfo(uint disk_index, fs_info_t *info);
 
 
 // Get filesystem entry
@@ -254,14 +254,14 @@ uint get_fsinfo(uint disk_index, fs_info_t* info);
 // - relative to parent if parent index entry or disk id are provided
 // Returns ERROR_NOT_FOUND if error, entry index otherwise
 #define UNKNOWN_VALUE 0xFFFFFFFF
-uint get_entry(fs_entry_t* entry, char* path, uint parent, uint disk);
+uint get_entry(fs_entry_t *entry, char *path, uint parent, uint disk);
 
 
 // Read file
 // Output: buff
 // Reads count bytes of path file starting at byte offset inside this file.
 // Returns number of readed bytes or ERROR_NOT_FOUND
-uint read_file(void* buff, char* path, uint offset, uint count);
+uint read_file(void *buff, char *path, uint offset, uint count);
 
 // Write file flags
  #define FWF_CREATE   0x0001 // Create if does not exist
@@ -272,7 +272,7 @@ uint read_file(void* buff, char* path, uint offset, uint count);
 // If target file is not big enough, its size is increased.
 // Depending on flags, path file can be created or truncated.
 // Returns number of written bytes or ERROR_NOT_FOUND
-uint write_file(void* buff, char* path, uint offset, uint count, uint flags);
+uint write_file(void *buff, char *path, uint offset, uint count, uint flags);
 
 
 // Move entry
@@ -281,7 +281,7 @@ uint write_file(void* buff, char* path, uint offset, uint count, uint flags);
 // - ERROR_NOT_FOUND if source does not exist
 // - ERROR_EXISTS if destination exists
 // - another value otherwise
-uint move(char* srcpath, char* dstpath);
+uint move(char *srcpath, char *dstpath);
 
 
 // Copy entry
@@ -290,14 +290,14 @@ uint move(char* srcpath, char* dstpath);
 // - ERROR_NOT_FOUND if source does not exist
 // - ERROR_EXISTS if destination exists
 // - another value otherwise
-uint copy(char* srcpath, char* dstpath);
+uint copy(char *srcpath, char *dstpath);
 
 // Delete entry
 // In the case of directories, they are recursively deleted
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - index of deleted entry otherwise
-uint delete(char* path);
+uint delete(char *path);
 
 
 // Create a directory
@@ -305,7 +305,7 @@ uint delete(char* path);
 // - ERROR_NOT_FOUND if parent path does not exist
 // - ERROR_EXISTS if destination already exists
 // - index of created entry otherwise
-uint create_directory(char* path);
+uint create_directory(char *path);
 
 
 // List directory entries
@@ -314,7 +314,7 @@ uint create_directory(char* path);
 // Returns:
 // - ERROR_NOT_FOUND if path does not exist
 // - number of elements in ths directory otherwise
-uint list(fs_entry_t* entry, char* path, uint n);
+uint list(fs_entry_t *entry, char *path, uint n);
 
 
 // Create filesystem in disk
@@ -327,25 +327,25 @@ uint format(uint disk);
 
 // About IP format
 // Unless something different is specified:
-// uint8_t* ip  are arrays of 4 bytes with a parsed IP
-// char* ip     are strings containing an unparsed IP
+// uint8_t *ip  are arrays of 4 bytes with a parsed IP
+// char *ip     are strings containing an unparsed IP
 #define IP_LEN 4
-typedef struct {
+typedef struct net_address_t {
   uint8_t  ip[IP_LEN];
   uint16_t port;
 } net_address_t;
 
 // Convert string to IP
-void str_to_ip(uint8_t* ip, const char* str);
+void str_to_ip(uint8_t *ip, const char *str);
 
 // Convert IP to string
-char* ip_to_str(char* str, uint8_t* ip);
+char *ip_to_str(char *str, uint8_t *ip);
 
 // Send len bytes of buff to dst through network
 // Uses UDP protocol. Reception not guaranteed
 // (uses UDP port 8086 for source)
-// Returns 0 on success
-uint send(net_address_t* dst, uint8_t* buff, size_t len);
+// Returns NO_ERROR on success
+uint send(net_address_t *dst, uint8_t *buff, size_t len);
 
 // Get and remove received data from the network reception buffer.
 // src and buff are filled by the function.
@@ -355,15 +355,29 @@ uint send(net_address_t* dst, uint8_t* buff, size_t len);
 // or 0 if nothing received.
 // When the reception buffer is full, all new received packets
 // are discarded. So, recv must be called frequently
-// Call recv_set_port once before start calling to this 
+// Call recv_set_port once before start calling to this
 // function to enable a reception port.
 // Uses UDP protocol
-uint recv(net_address_t* src, uint8_t* buff, size_t buff_size);
+uint recv(net_address_t *src, uint8_t *buff, size_t buff_size);
 
 // Enable reception in this port and disable all others.
 // Must be called once before start calling recv.
 // Specify a UDP port as parameter
 void recv_set_port(uint16_t port);
+
+
+
+// Play sound file, non blocking
+// Return NO_ERROR on success, error code otherwise.
+// Can only play wav files
+uint sound_play(const char *wav_file);
+
+// Return true while a sound is playing
+// Return false otherwise
+bool sound_is_playing();
+
+// Stop playing sound
+void sound_stop();
 
 
 #endif // _ULIB_H

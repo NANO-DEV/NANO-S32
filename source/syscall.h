@@ -30,54 +30,57 @@
 #define SYSCALL_NET_RECV                0x0080
 #define SYSCALL_NET_SEND                0x0081
 #define SYSCALL_NET_PORT                0x0082
+#define SYSCALL_SOUND_PLAY              0x0090
+#define SYSCALL_SOUND_STOP              0x0091
+#define SYSCALL_SOUND_IS_PLAYING        0x0092
 
-typedef struct {
+typedef struct syscall_porition_t {
   uint x;
   uint y;
 } syscall_porition_t;
 
-typedef struct {
+typedef struct syscall_posattr_t {
   uint x;
   uint y;
   char c;
   uint attr;
 } syscall_posattr_t;
 
-typedef struct {
-  uint               disk_index;
-  fs_info_t*           info;
+typedef struct syscall_fsinfo_t {
+  uint       disk_index;
+  fs_info_t *info;
 } syscall_fsinfo_t;
 
-typedef struct {
-  fs_entry_t*          entry;
-  char*              path;
-  uint               parent;
-  uint               disk;
+typedef struct syscall_fsentry_t {
+  fs_entry_t *entry;
+  char       *path;
+  uint        parent;
+  uint        disk;
 } syscall_fsentry_t;
 
-typedef struct {
-  void*              buff;
-  char*              path;
-  uint               offset;
-  uint               count;
-  uint               flags;
+typedef struct syscall_fsrwfile_t {
+  void *buff;
+  char *path;
+  uint  offset;
+  uint  count;
+  uint  flags;
 } syscall_fsrwfile_t;
 
-typedef struct {
-  char*              src;
-  char*              dst;
+typedef struct syscall_fssrcdst_t {
+  char *src;
+  char *dst;
 } syscall_fssrcdst_t;
 
-typedef struct {
-  fs_entry_t*          entry;
-  char*              path;
-  uint               n;
+typedef struct syscall_fslist_t {
+  fs_entry_t *entry;
+  char       *path;
+  uint        n;
 } syscall_fslist_t;
 
-typedef struct {
-  net_address_t*       addr;
-  uint8_t*           buff;
-  size_t             size;
+typedef struct syscall_netop_t {
+  net_address_t *addr;
+  uint8_t       *buff;
+  size_t         size;
 } syscall_netop_t;
 
 #endif // _SYSCALL_H

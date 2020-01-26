@@ -8,6 +8,7 @@
 #include "fs.h"
 #include "x86.h"
 #include "net.h"
+#include "sound.h"
 #include "cli.h"
 
 // Extern program call
@@ -43,7 +44,7 @@ static void cli_shutdown(uint argc)
 }
 
 // list directory entries
-static void cli_list(uint argc, char* argv[])
+static void cli_list(uint argc, char *argv[])
 {
   // If not path arg provided, add and implicit ROOT_DIR_NAME
   // This way it shows system disk contents
@@ -53,7 +54,7 @@ static void cli_list(uint argc, char* argv[])
   }
 
   if(argc == 2) {
-  
+
     // Get number of entries in target dir
     sfs_entry_t entry;
     const uint n = fs_list(&entry, argv[1], 0);
@@ -109,7 +110,7 @@ static void cli_list(uint argc, char* argv[])
 }
 
 // Create directory
-static void cli_makedir(uint argc, char* argv[])
+static void cli_makedir(uint argc, char *argv[])
 {
   if(argc == 2) {
     const uint result = fs_create_directory(argv[1]);
@@ -127,7 +128,7 @@ static void cli_makedir(uint argc, char* argv[])
   }
 }
 
-static void cli_delete(uint argc, char* argv[])
+static void cli_delete(uint argc, char *argv[])
 {
   if(argc == 2) {
     const uint result = fs_delete(argv[1]);
@@ -140,7 +141,7 @@ static void cli_delete(uint argc, char* argv[])
 }
 
 // Move/rename
-static void cli_move(uint argc, char* argv[])
+static void cli_move(uint argc, char *argv[])
 {
   if(argc == 3) {
     const uint result = fs_move(argv[1], argv[2]);
@@ -158,7 +159,7 @@ static void cli_move(uint argc, char* argv[])
   }
 }
 
-static void cli_copy(uint argc, char* argv[])
+static void cli_copy(uint argc, char *argv[])
 {
   if(argc == 3) {
     const uint result = fs_copy(argv[1], argv[2]);
@@ -196,11 +197,13 @@ static void cli_info(uint argc)
     putstr("\n");
     putstr("System disk: %s\n", disk_to_string(system_disk));
 
-    const uint net_state = net_get_state();
-    putstr("Network state: %s\n", 
+    const uint net_state = io_net_get_state();
+    putstr("Network state: %s\n",
       net_state == NET_STATE_ENABLED ? "enabled" :
       net_state == NET_STATE_DISABLED ? "disabled" :
-      "uninitialized" );
+      "uninitialized");
+    putstr("Sound state: %s\n",
+      io_sound_is_enabled() ? "enabled" : "disabled");
     putstr("\n");
     dump_regs();
   } else {
@@ -209,7 +212,7 @@ static void cli_info(uint argc)
 }
 
 // Clone system disk in another disk
-static void cli_clone(uint argc, char* argv[])
+static void cli_clone(uint argc, char *argv[])
 {
   if(argc == 2) {
     // Show source disk info
@@ -252,7 +255,7 @@ static void cli_clone(uint argc, char* argv[])
     // Format disk and copy kernel
     putstr("Formatting and copying system files...\n");
     uint result = fs_format(disk);
-    if(result != 0) {
+    if(result != NO_ERROR) {
       putstr("Error formatting disk. Aborted\n");
       return;
     }
@@ -275,8 +278,10 @@ static void cli_clone(uint argc, char* argv[])
       strncpy(dst, argv[1], sizeof(dst));
       strncat(dst, PATH_SEPARATOR_S, sizeof(dst));
       strncat(dst, (char*)entry.name, sizeof(dst));
+      putstr("Copying %s to %s...\n", entry.name, dst);
       debug_putstr("copy %s %s\n", entry.name, dst);
       result = fs_copy((char*)entry.name, dst);
+      fs_print_map(dst);
       // Skip ERROR_EXISTS errors, because system files were copied
       // by fs_format function, so they are expected to fail
       if(result >= ERROR_ANY && result != ERROR_EXISTS) {
@@ -294,7 +299,7 @@ static void cli_clone(uint argc, char* argv[])
 }
 
 // Read (display) a file
-static void cli_read(uint argc, char* argv[])
+static void cli_read(uint argc, char *argv[])
 {
   if(argc==2 || (argc==3 && strcmp(argv[1],"hex")==0)) {
     uint result = 0;
@@ -314,16 +319,24 @@ static void cli_read(uint argc, char* argv[])
         if(argc==2) {
           putc(buff[i]);
         } else {
-          uint uc = (uint8_t)buff[i];
+          const uint uc = (uint8_t)buff[i];
           putstr("%2x ", uc);
+          debug_putstr("%2x ", uc);
+          if(i%16==15 || i==result-1) {
+            debug_putstr("\n");
+          }
         }
       }
       memset(buff, 0, sizeof(buff));
       offset += result;
     }
+    fs_print_map(argv[argc-1]);
     putstr("\n");
+  } else if(argc==3 && strcmp(argv[1],"map")==0) {
+    putstr("FS map printed to the debug output\n");
+    fs_print_map(argv[argc-1]);
   } else {
-    putstr("usage: read [hex] <path>\n");
+    putstr("usage: read [hex|map] <path>\n");
   }
 }
 
@@ -346,7 +359,7 @@ static void cli_time(uint argc)
 }
 
 // Set system config
-static void cli_config(uint argc, char* argv[])
+static void cli_config(uint argc, char *argv[])
 {
   // Config command: Show or edit config parameters
   if(argc == 1) {
@@ -387,14 +400,14 @@ static void cli_config(uint argc, char* argv[])
 // Not a built-in command case:
 // -Try to find and run executable file
 // -Show "Unknown command" error if not found
-static void cli_extern(uint argc, char* argv[])
+static void cli_extern(uint argc, char *argv[])
 {
   // Try to find an executable file
   char prog_file_name[32] = {0};
   strncpy(prog_file_name, argv[0], sizeof(prog_file_name));
 
   // Append .bin if there is not a '.' in the name
-  const char* prog_ext = ".bin";
+  const char *prog_ext = ".bin";
   if(!strchr(prog_file_name, '.')) {
     strncat(prog_file_name, prog_ext, sizeof(prog_file_name));
   }
@@ -432,8 +445,8 @@ static void cli_extern(uint argc, char* argv[])
     }
 
     uint c = 0;
-    char** arg_var = (char**)UPROG_ARGLOC;
-    char* arg_str = (char*)UPROG_STRLOC;
+    char **arg_var = (char**)UPROG_ARGLOC;
+    char *arg_str = (char*)UPROG_STRLOC;
 
     // Create argv copy in program segment
     for(uint uarg=0; uarg<argc; uarg++) {
@@ -460,17 +473,17 @@ static void cli_extern(uint argc, char* argv[])
 
 // Execute a command
 #define CLI_MAX_ARG 5
-static void execute(char* str)
+static void execute(char *str)
 {
-  char* argv[CLI_MAX_ARG] = {NULL};
+  char *argv[CLI_MAX_ARG] = {NULL};
 
   memset(argv, 0, sizeof(argv));
   debug_putstr("in> %s\n", str);
 
   // Tokenize
   uint argc = 0;
-  char* tok = str;
-  char* nexttok = tok;
+  char *tok = str;
+  char *nexttok = tok;
   while(*tok && *nexttok && argc < CLI_MAX_ARG) {
     tok = strtok(tok, &nexttok, ' ');
     if(*tok) {
@@ -577,7 +590,7 @@ static void execute(char* str)
 }
 
 // Execute script file
-void cli_exec_file(char* path)
+void cli_exec_file(char *path)
 {
   char line[72] = {0};
   uint offset = 0;

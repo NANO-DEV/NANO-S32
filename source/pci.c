@@ -31,7 +31,7 @@ void pci_init()
   pci_count = 0;
   for(uint8_t slot=0; slot<32; slot++) {
     for(uint8_t func=0; func<8; func++) {
-      uint32_t pci_dev_addr = 
+      uint32_t pci_dev_addr =
         ((bus<<16) | (slot<<11) | (func<<8));
 
       uint16_t vendor_id = pci_read_config(pci_dev_addr, 0)&0xFFFF;
@@ -42,7 +42,7 @@ void pci_init()
       }
 
       // Read device
-      uint32_t* p = (uint32_t *)&pci_devices[pci_count];
+      uint32_t *p = (uint32_t *)&pci_devices[pci_count];
 
       for(uint i=0; i<sizeof(PCI_device_t); i+=4) {
         *p++ = pci_read_config(pci_dev_addr, i);
@@ -66,7 +66,7 @@ void pci_init()
 
 // Find device in bus 0
 // Previous initialization is required
-PCI_device_t* pci_find_device(uint16_t vendor, uint16_t device)
+PCI_device_t *pci_find_device(uint16_t vendor, uint16_t device)
 {
   for(uint i=0; i<pci_count; i++) {
     if(vendor==pci_devices[i].vendor_id &&
@@ -74,5 +74,5 @@ PCI_device_t* pci_find_device(uint16_t vendor, uint16_t device)
       return &pci_devices[i];
     }
   }
-  return 0;
+  return NULL;
 }
